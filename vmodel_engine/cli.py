@@ -49,6 +49,12 @@ def main(argv: list[str] | None = None) -> int:
         for gate in run.gate_results:
             status = "PASS" if gate.passed else "FAIL"
             print(f"  {status} {gate.name}")
+        print("Agent quality policy:")
+        for policy in run.quality_policy_results:
+            status = "PASS" if policy.passed else "FAIL"
+            print(f"  {status} {policy.name}")
+        print(f"Artifact reviews: {len(run.artifact_reviews)}")
+        print(f"Arbitrations: {len(run.arbitration_records)}")
         return 0 if run.status == "ready_for_human_acceptance" else 1
     if args.command == "ready":
         print("Ready to accept the first project.")

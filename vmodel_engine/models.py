@@ -92,6 +92,45 @@ class ToolStatus:
 
 
 @dataclass(frozen=True)
+class AgentRole:
+    id: str
+    title: str
+    mission: str
+    authority: str
+    lenses: list[str]
+
+
+@dataclass(frozen=True)
+class ArtifactReview:
+    id: str
+    artifact_id: str
+    artifact_title: str
+    reviewer_role: str
+    lens: str
+    verdict: str
+    findings: list[str]
+    required_actions: list[str]
+
+
+@dataclass(frozen=True)
+class ArbitrationRecord:
+    id: str
+    topic: str
+    raised_by: str
+    counterparty: str
+    decision: str
+    rationale: str
+    required_follow_up: list[str]
+
+
+@dataclass(frozen=True)
+class QualityPolicyResult:
+    name: str
+    passed: bool
+    details: str
+
+
+@dataclass(frozen=True)
 class WorkflowRun:
     project_name: str
     project_type: str
@@ -101,6 +140,9 @@ class WorkflowRun:
     work_items: list[WorkItem]
     gate_results: list[GateResult]
     tool_statuses: list[ToolStatus]
+    artifact_reviews: list[ArtifactReview]
+    arbitration_records: list[ArbitrationRecord]
+    quality_policy_results: list[QualityPolicyResult]
     created_at: str
 
     def to_dict(self) -> dict[str, Any]:

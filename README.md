@@ -95,3 +95,7 @@ vmodel-engine github status
 ```
 
 PlantSpeak is configured as the first project test target. See `docs/plantspeak-first-project.md`.
+
+## Agent Governance
+
+The engine includes a Software Lead Agent role, specialist review roles, three-review minimums for design artifacts, arbitration records for dev/test disputes, and quality policy gates. See `docs/agent-governance.md`.

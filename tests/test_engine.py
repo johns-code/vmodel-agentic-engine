@@ -17,9 +17,14 @@ def test_build_project_runs_vertical_workflow(tmp_path: Path) -> None:
     assert len(run.work_items) == 2
     assert all(gate.passed for gate in run.gate_results)
     assert any(tool.name == "pytest" for tool in run.tool_statuses)
+    assert len(run.artifact_reviews) == 9
+    assert run.arbitration_records
+    assert all(result.passed for result in run.quality_policy_results)
     assert (tmp_path / "run" / "artifacts" / "artifact-package.json").exists()
+    assert (tmp_path / "run" / "agent-governance" / "README.md").exists()
     assert (tmp_path / "run" / "work-items" / "LOCAL-001.json").exists()
     assert (tmp_path / "run" / "generated-project" / "generated_demo" / "cli.py").exists()
     workflow = json.loads((tmp_path / "run" / "workflow-run.json").read_text(encoding="utf-8"))
     assert workflow["project_type"] == "python-cli"
     assert workflow["tool_statuses"]
+    assert workflow["artifact_reviews"]

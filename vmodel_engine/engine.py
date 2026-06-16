@@ -3,6 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from vmodel_engine.agents import (
+    AGENT_ROLES,
+    arbitrate_agent_disputes,
+    evaluate_quality_policy,
+    perform_artifact_reviews,
+    write_agent_governance_artifacts,
+)
 from vmodel_engine.artifacts import write_artifact_package
 from vmodel_engine.gates import run_python_project_gates
 from vmodel_engine.models import ArtifactPackage, WorkflowRun, utc_now_iso
@@ -33,11 +40,25 @@ def build_project(
 
     package = create_artifact_package(requirements_path, project_name)
     write_artifact_package(package, artifact_dir)
+    artifact_reviews = perform_artifact_reviews(package)
+    arbitration_records = arbitrate_agent_disputes(artifact_reviews)
+    quality_policy_results = evaluate_quality_policy(package, artifact_reviews, arbitration_records)
+    write_agent_governance_artifacts(
+        AGENT_ROLES,
+        artifact_reviews,
+        arbitration_records,
+        quality_policy_results,
+        output_dir,
+    )
     work_items = LocalIssueTracker(output_dir).create_items(package.implementation_tasks)
     generate_python_cli_project(package, generated_project_dir)
     gate_results = run_python_project_gates(generated_project_dir)
     tool_statuses = inspect_tools()
-    status = "ready_for_human_acceptance" if all(result.passed for result in gate_results) else "blocked_by_gates"
+    status = (
+        "ready_for_human_acceptance"
+        if all(result.passed for result in gate_results) and all(result.passed for result in quality_policy_results)
+        else "blocked_by_gates"
+    )
 
     run = WorkflowRun(
         project_name=package.project_name,
@@ -48,6 +69,9 @@ def build_project(
         work_items=work_items,
         gate_results=gate_results,
         tool_statuses=tool_statuses,
+        artifact_reviews=artifact_reviews,
+        arbitration_records=arbitration_records,
+        quality_policy_results=quality_policy_results,
         created_at=utc_now_iso(),
     )
     (output_dir / "workflow-run.json").write_text(json.dumps(run.to_dict(), indent=2) + "\n", encoding="utf-8")

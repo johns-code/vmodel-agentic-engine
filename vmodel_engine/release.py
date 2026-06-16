@@ -26,6 +26,9 @@ def write_release_evidence(run: WorkflowRun, output_dir: Path) -> list[Path]:
 
 def _summary(run: WorkflowRun) -> str:
     gates = "\n".join(f"- {gate.name}: {'PASS' if gate.passed else 'FAIL'}" for gate in run.gate_results)
+    policies = "\n".join(
+        f"- {policy.name}: {'PASS' if policy.passed else 'FAIL'}" for policy in run.quality_policy_results
+    )
     return f"""# Release Evidence
 
 Project: {run.project_name}
@@ -39,6 +42,15 @@ Artifact directory: `{run.artifact_dir}`
 ## Gates
 
 {gates}
+
+## Agent Quality Policy
+
+{policies}
+
+## Reviews
+
+- Artifact reviews: {len(run.artifact_reviews)}
+- Arbitration records: {len(run.arbitration_records)}
 
 ## Approval
 
