@@ -35,6 +35,16 @@ def test_required_clarifications_can_be_answered(tmp_path: Path) -> None:
     assert ensure_clarifications_answered(requirements, run_dir) == []
 
 
+def test_empty_answer_is_rejected(tmp_path: Path) -> None:
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("Build ICD capabilities on DA14531 with I2C.", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    pending = ensure_clarifications_answered(requirements, run_dir)
+
+    with pytest.raises(ValueError, match="answer cannot be empty"):
+        answer_question(run_dir, pending[0].id, "   ")
+
+
 def test_delivery_blocks_on_pending_clarifications(tmp_path: Path) -> None:
     requirements = tmp_path / "requirements.txt"
     requirements.write_text("Build ICD capabilities on DA14531 with I2C.", encoding="utf-8")

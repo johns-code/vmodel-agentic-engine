@@ -64,6 +64,9 @@ def create_question(
 
 
 def answer_question(run_dir: Path, question_id: str, answer: str) -> ClarificationQuestion:
+    answer = answer.strip()
+    if not answer:
+        raise ValueError("answer cannot be empty")
     questions = load_questions(run_dir)
     updated: list[ClarificationQuestion] = []
     answered: ClarificationQuestion | None = None

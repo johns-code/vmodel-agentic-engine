@@ -90,7 +90,11 @@ def serve_dashboard(run_dir: Path, host: str = "127.0.0.1", port: int = 8765) ->
                 return
             if parsed.path.startswith("/api/questions/") and parsed.path.endswith("/answer"):
                 question_id = parsed.path.split("/")[3]
-                item = answer_question(run_dir, question_id, str(payload.get("answer", "")).strip())
+                try:
+                    item = answer_question(run_dir, question_id, str(payload.get("answer", "")).strip())
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
                 self._send_json(asdict(item))
                 return
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -314,7 +318,17 @@ _INDEX_HTML = r"""<!doctype html>
     async function answerQuestion(event, id) {
       event.preventDefault();
       const form = new FormData(event.target);
-      await fetch(`/api/questions/${id}/answer`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.fromEntries(form)) });
+      const answer = (form.get('answer') || '').trim();
+      if (!answer) {
+        window.alert('Please enter an answer before submitting.');
+        return;
+      }
+      const response = await fetch(`/api/questions/${id}/answer`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ answer }) });
+      if (!response.ok) {
+        const payload = await response.json();
+        window.alert(payload.error || 'Could not save answer.');
+        return;
+      }
       await loadState({ force: true });
     }
     loadState();
