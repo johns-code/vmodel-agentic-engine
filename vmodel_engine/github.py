@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any
 
 
 DEFAULT_CONFIG_PATH = Path("config/github.json")
+WINDOWS_GH_PATH = Path(r"C:\Program Files\GitHub CLI\gh.exe")
 
 
 @dataclass(frozen=True)
@@ -43,9 +45,18 @@ def load_github_project_config(path: Path = DEFAULT_CONFIG_PATH) -> GitHubProjec
     )
 
 
+def gh_executable() -> str:
+    discovered = shutil.which("gh")
+    if discovered:
+        return discovered
+    if WINDOWS_GH_PATH.exists():
+        return str(WINDOWS_GH_PATH)
+    return "gh"
+
+
 def inspect_github_project(config: GitHubProjectConfig) -> GitHubProjectStatus:
     command = [
-        "gh",
+        gh_executable(),
         "project",
         "view",
         str(config.project_number),
@@ -90,7 +101,7 @@ def render_github_project_status(status: GitHubProjectStatus) -> str:
 
 
 def run_gh(args: list[str], cwd: Path | None = None) -> dict[str, Any] | str:
-    completed = subprocess.run(["gh", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    completed = subprocess.run([gh_executable(), *args], cwd=cwd, capture_output=True, text=True, check=False)
     if completed.returncode != 0:
         raise RuntimeError((completed.stdout + completed.stderr).strip())
     output = completed.stdout.strip()
@@ -100,7 +111,7 @@ def run_gh(args: list[str], cwd: Path | None = None) -> dict[str, Any] | str:
 
 
 def repo_exists(repo: str) -> bool:
-    completed = subprocess.run(["gh", "repo", "view", repo], capture_output=True, text=True, check=False)
+    completed = subprocess.run([gh_executable(), "repo", "view", repo], capture_output=True, text=True, check=False)
     return completed.returncode == 0
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from vmodel_engine.autopilot import progress_delivered_run
 from vmodel_engine.clarifications import generate_lead_clarifications
 from vmodel_engine.dashboard import serve_dashboard
 from vmodel_engine.delivery import deliver_project
@@ -35,6 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     deliver.add_argument("--project-name", required=True, help="Product project name.")
     deliver.add_argument("--project-type", default="python-cli", help="Generated project type. Currently: python-cli.")
     deliver.add_argument("--allow-pending-clarifications", action="store_true", help="Proceed even when required lead questions are unanswered.")
+
+    autopilot = subparsers.add_parser("autopilot", help="Advance a delivered run through implementation, review, tests, and PR update.")
+    autopilot.add_argument("run_dir", type=Path, help="Delivered run directory containing delivery-result.json.")
 
     clarify = subparsers.add_parser("clarify", help="Generate Software Lead clarification questions.")
     clarify.add_argument("requirements_file", type=Path, help="Path to a requirements file or directory.")
@@ -102,6 +106,14 @@ def main(argv: list[str] | None = None) -> int:
         if result.pull_request:
             print(f"Pull request: {result.pull_request.url}")
         return 0 if result.workflow_status == "ready_for_human_acceptance" else 1
+    if args.command == "autopilot":
+        result = progress_delivered_run(args.run_dir)
+        print(f"Repository: {result.repository}")
+        print(f"Branch: {result.branch}")
+        print(f"Pull request: {result.pull_request_url}")
+        print(f"Local tests: {'PASS' if result.local_tests_passed else 'FAIL'}")
+        print(f"Reports: {len(result.reports)}")
+        return 0 if result.local_tests_passed else 1
     if args.command == "clarify":
         generated = generate_lead_clarifications(args.requirements_file, args.output)
         pending = pending_required_questions(args.output)

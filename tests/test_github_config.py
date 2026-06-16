@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from vmodel_engine.github import load_github_project_config
+from vmodel_engine.github import gh_executable, load_github_project_config
 
 
 def test_load_github_project_config(tmp_path: Path) -> None:
@@ -25,3 +25,7 @@ def test_load_github_project_config(tmp_path: Path) -> None:
     assert config.project_number == 2
     assert config.project_title == "PlantSpeak"
     assert config.default_product_repo == "johns-code/plantspeak"
+
+
+def test_gh_executable_returns_a_command() -> None:
+    assert gh_executable()

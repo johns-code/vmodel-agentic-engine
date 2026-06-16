@@ -9,7 +9,7 @@ from pathlib import Path
 
 from vmodel_engine.clarifications import ensure_clarifications_answered
 from vmodel_engine.engine import build_project
-from vmodel_engine.github import add_issue_to_project, create_issue, ensure_repo, load_github_project_config
+from vmodel_engine.github import add_issue_to_project, create_issue, ensure_repo, gh_executable, load_github_project_config
 from vmodel_engine.intake import copy_source_requirements
 from vmodel_engine.models import DeliveryIssue, DeliveryPullRequest, DeliveryResult
 from vmodel_engine.questions import questions_path
@@ -230,7 +230,7 @@ def _create_or_view_pr(repo: str, branch: str, project_name: str, issues: list[D
 """
     completed = subprocess.run(
         [
-            "gh",
+            gh_executable(),
             "pr",
             "create",
             "--repo",
@@ -252,7 +252,7 @@ def _create_or_view_pr(repo: str, branch: str, project_name: str, issues: list[D
         raise RuntimeError((completed.stdout + completed.stderr).strip())
     if completed.returncode != 0:
         data = subprocess.run(
-            ["gh", "pr", "view", branch, "--repo", repo, "--json", "number,title,url,state"],
+            [gh_executable(), "pr", "view", branch, "--repo", repo, "--json", "number,title,url,state"],
             capture_output=True,
             text=True,
             check=True,
@@ -260,7 +260,7 @@ def _create_or_view_pr(repo: str, branch: str, project_name: str, issues: list[D
     else:
         pr_url = completed.stdout.strip()
         data = subprocess.run(
-            ["gh", "pr", "view", pr_url, "--repo", repo, "--json", "number,title,url,state"],
+            [gh_executable(), "pr", "view", pr_url, "--repo", repo, "--json", "number,title,url,state"],
             capture_output=True,
             text=True,
             check=True,
