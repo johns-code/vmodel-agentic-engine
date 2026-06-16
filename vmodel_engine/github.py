@@ -114,7 +114,7 @@ def ensure_repo(repo: str, description: str, public: bool = True) -> str:
 
 
 def create_issue(repo: str, title: str, body: str, labels: list[str] | None = None) -> dict[str, Any]:
-    existing = run_gh(["issue", "list", "--repo", repo, "--state", "all", "--json", "number,title,url,id", "--limit", "100"])
+    existing = run_gh(["issue", "list", "--repo", repo, "--state", "open", "--json", "number,title,url,id", "--limit", "100"])
     assert isinstance(existing, list)
     for issue in existing:
         if issue.get("title") == title:
