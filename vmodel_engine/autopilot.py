@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from vmodel_engine.delivery import _checkout_branch, _commit_all, _ensure_git_identity, _push, _write_product_ci
-from vmodel_engine.artifact_quality import evaluate_system_test_plan
+from vmodel_engine.artifact_quality import evaluate_implementation_plan, evaluate_system_test_plan
 from vmodel_engine.github import run_gh
 
 
@@ -295,7 +295,10 @@ def write_artifact_review_cycle(repo_dir: Path) -> list[str]:
 def write_artifact_quality_gates(repo_dir: Path) -> list[str]:
     review_dir = repo_dir / "docs" / "reviews"
     review_dir.mkdir(parents=True, exist_ok=True)
-    checks = evaluate_system_test_plan(repo_dir / "docs" / "vmodel" / "10-system-test-plan.md")
+    checks = [
+        *evaluate_system_test_plan(repo_dir / "docs" / "vmodel" / "10-system-test-plan.md"),
+        *evaluate_implementation_plan(repo_dir / "docs" / "planning" / "staged-development-test-plan.md"),
+    ]
     passed = all(check.passed for check in checks)
     data = {
         "passed": passed,
@@ -1050,29 +1053,30 @@ def _staged_development_test_plan() -> str:
 
 ## Readiness Decision
 
-Status: blocked before full staged implementation.
+Status: ready for S1 after PR #128 baseline review/merge decision.
 
-Reason: three-agent artifact review found blocking gaps in requirements, architecture contracts, RTM accuracy, verification evidence, acceptance criteria, and release/security review posture.
+Reason: S0 remediation produced measurable requirements, concrete system tests, artifact quality gates, and a three-agent review cycle. Later firmware, BLE, target-board HIL, and final release gates remain open.
 
-## Stages
+## Execution Plan
 
-| Stage | Goal | Branch Pattern | Primary Agents | Required Tests | Exit Criteria |
-| --- | --- | --- | --- | --- | --- |
-| S0 review remediation | Fix blocking artifact comments before implementation claims advance. | `agent/review-remediation-*` | Software Lead, Product, Architecture, QA | doc quality checks, review-cycle regeneration | No blocking review comments for staged implementation entry. |
-| S1 foundation contracts | Define stable command, data, pin, requirement, and trace contracts. | `agent/foundation-contracts-*` | Architecture, Development, QA | unit tests for schemas, pins, capability registry, RTM integrity | Contract tests pass and docs link DES/TASK/TEST IDs to code. |
-| S2 PC dev-mode harness | Make PC-side CLI and dev-mode behavior executable and user-inspectable. | `agent/devmode-harness-*` | Development, QA, Product | CLI tests, snapshot tests, self-test JSON checks | PR proves dev-mode measurement, trace, and self-test outputs. |
-| S3 hardware adapter layer | Add interfaces for ADS1115, LP5816/PCA9846, MLX90632, HDC2010, MXC4005XC without target hardware dependency. | `agent/hardware-adapters-*` | Architecture, Development, Security | mock I2C tests, mux-channel tests, error-path tests | Adapter contract tests pass and target-board gaps remain explicit. |
-| S4 BLE/ICD transport | Add transport abstraction and simulated BLE command execution. | `agent/ble-transport-*` | Development, Security, QA | simulated transport tests, malformed payload tests | PC harness can issue ICD commands through transport abstraction. |
-| S5 DA14531 firmware build path | Add firmware project/build/flash workflow when toolchain details are verified. | `agent/firmware-build-*` | Firmware Dev, Release, QA | build command, static checks, flash dry-run where safe | CI or documented local evidence proves reproducible firmware build. |
-| S6 hardware-in-loop qualification | Run target-board tests for LEDs, EN_Peripherals, I2C sensors, measurement sequence, and push-button wake. | `agent/hil-qualification-*` | QA, Firmware Dev, Product | HIL tests with captured logs and operator notes | Requirement-by-requirement verification closure or accepted deferral. |
-| S7 acceptance and release | Close validation, security, code review, release notes, and human approval gates. | `agent/release-candidate-*` | Software Lead, Release, Security, Product | full CI, review checklist, security scan, acceptance checklist | Human signs final acceptance and release package is generated. |
+| Stage | PR / Branch | Issues | Requirements | Files / Modules | Tests | Docs Updated | Review Agents | CI Gates | Rollback / Failure Action | Definition Of Done |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| S0 baseline remediation | PR #128 / `agent/generated-implementation` | #114, #115, #116, #117, #118, #119, #120, #121, #122, #123, #124, #125, #126, #127 | SW-001, SW-002, SW-003, SW-004, SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-011, SW-012, SW-013, SW-014 | `plantspeak/cli.py`, `plantspeak/icd.py`, `plantspeak/devices.py`, `plantspeak/pins.py`, `docs/reviews/artifact-quality-gates.md` | `python -m pytest`; `tests/test_cli.py`; `tests/test_devices.py`; `tests/test_icd.py`; `tests/test_requirements.py` | `docs/vmodel/*`, `docs/planning/*`, `docs/reviews/*` | product_requirements_agent; systems_architecture_agent; qa_verification_agent | GitHub Actions `CI` job `test`; artifact-quality-gates PASS | Revert PR branch to previous passing SHA and create/update defect issue with failed gate output | PR #128 mergeable; CI success; 66 artifact reviews; artifact quality gates PASS |
+| S1 foundation contracts | PR `S1 Foundation Contracts` / `agent/s1-foundation-contracts` | #114, #115, #116, #117, #118, #119, #120, #121, #122, #123, #124, #125, #126, #127 | SW-001, SW-002, SW-003, SW-004, SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-011, SW-012, SW-013, SW-014 | `plantspeak/contracts.py`, `plantspeak/trace.py`, `plantspeak/icd.py`, `plantspeak/requirements.py`, `tests/test_contracts.py`, `tests/test_traceability.py` | `python -m pytest tests/test_contracts.py tests/test_traceability.py tests/test_icd.py`; RTM ID consistency check | `docs/vmodel/03-software-requirements.md`, `docs/vmodel/04-architecture-design.md`, `docs/vmodel/12-requirements-traceability-matrix.md`, `docs/reviews/artifact-quality-gates.md` | systems_architecture_agent; development_lead_agent; qa_verification_agent | GitHub Actions `CI` job `test`; contract schema gate; traceability gate | Revert PR branch to previous passing SHA and create/update defect issue linked to broken requirement or schema | Each SW requirement maps to command, status, code module, tests, issue, and evidence ID; no dangling RTM IDs |
+| S2 PC dev-mode harness | PR `S2 PC Dev-Mode Harness` / `agent/s2-devmode-harness` | #114, #119, #124, #126, #127 | SW-001, SW-006, SW-011, SW-013, SW-014 | `plantspeak/cli.py`, `plantspeak/evidence.py`, `plantspeak/devices.py`, `docs/test-evidence/ST-001.json`, `docs/test-evidence/ST-002.txt`, `docs/test-evidence/ST-003.json`, `docs/test-evidence/ST-004.json`, `tests/test_system_evidence.py` | `python -m pytest tests/test_cli.py tests/test_system_evidence.py`; run ST-001, ST-002, ST-003, ST-004 commands | `docs/vmodel/10-system-test-plan.md`, `docs/vmodel/13-verification-report.md`, `docs/reviews/test-report.md` | product_requirements_agent; qa_verification_agent; release_quality_agent | GitHub Actions `CI` job `test`; generated evidence files present and schema-valid | Revert PR branch to previous passing SHA and create/update defect issue with evidence artifact diff | Human can run dev-mode commands locally; ST-001, ST-002, ST-003, ST-004 evidence artifacts exist and match expected fields |
+| S3 hardware adapter layer | PR `S3 Hardware Adapter Layer` / `agent/s3-hardware-adapters` | #118, #119, #120, #121, #122, #123, #126 | SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-013 | `plantspeak/adapters/i2c.py`, `plantspeak/adapters/pca9846.py`, `plantspeak/adapters/ads1115.py`, `plantspeak/adapters/lp5816.py`, `plantspeak/adapters/mlx90632.py`, `plantspeak/adapters/hdc2010.py`, `plantspeak/adapters/mxc4005.py`, `tests/test_adapters.py` | `python -m pytest tests/test_adapters.py tests/test_contracts.py`; mocked mux-channel and device error tests | `docs/vmodel/05-detailed-design-notes.md`, `docs/vmodel/09-integration-test-plan.md`, `docs/planning/risk-register.md` | systems_architecture_agent; development_lead_agent; security_review_agent | GitHub Actions `CI` job `test`; adapter contract gate; error-path coverage gate | Revert PR branch to previous passing SHA and create/update defect issue for failed adapter/device contract | Mock adapters implement target interfaces; missing/unresponsive/invalid device behavior is explicit and test-covered |
+| S4 BLE ICD transport | PR `S4 BLE ICD Transport` / `agent/s4-ble-icd-transport` | #114, #120 | SW-001, SW-007 | `plantspeak/transport.py`, `plantspeak/ble_protocol.py`, `plantspeak/icd.py`, `tests/test_transport.py`, `tests/test_security_transport.py` | `python -m pytest tests/test_transport.py tests/test_security_transport.py`; malformed payload and timeout tests | `docs/vmodel/04-architecture-design.md`, `docs/vmodel/16-security-review-report.md`, `docs/vmodel/13-verification-report.md` | development_lead_agent; security_review_agent; qa_verification_agent | GitHub Actions `CI` job `test`; transport protocol gate; malformed payload gate | Revert PR branch to previous passing SHA and create/update defect issue with failing command payload | PC harness can execute ICD commands through mocked BLE transport with validated responses and error handling |
+| S5 firmware build path | PR `S5 Firmware Build Path` / `agent/s5-firmware-build` | #114, #115, #116, #117, #118 | SW-001, SW-002, SW-003, SW-004, SW-005 | `firmware/README.md`, `firmware/build.ps1`, `firmware/icd_command_table.h`, `firmware/pin_config.h`, `tests/test_firmware_contracts.py` | `python -m pytest tests/test_firmware_contracts.py`; documented DA14531 build command or manual evidence check | `docs/source-requirements/GENERIC_DA14531_DEV_BOARD_TOOLCHAIN.md`, `docs/vmodel/13-verification-report.md`, `docs/release-evidence/manifest.json` | firmware_development_agent; release_quality_agent; qa_verification_agent | GitHub Actions `CI` job `test`; firmware contract consistency gate; manual build evidence gate when toolchain cannot run in CI | Revert PR branch to previous passing SHA and create/update defect issue with build log or missing toolchain evidence | Firmware command table and pin configuration match S1 contracts; build path has reproducible command or explicit manual evidence |
+| S6 hardware-in-loop qualification | PR `S6 HIL Qualification` / `agent/s6-hil-qualification` | #115, #116, #117, #118, #119, #120, #121, #122, #123, #127 | SW-002, SW-003, SW-004, SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-014 | `tests/hil/test_target_board.py`, `docs/test-evidence/ST-006-hil-report.md`, `docs/test-evidence/hil-operator-notes.md` | HIL procedure `python -m pytest tests/hil --target-board`; captured board logs; operator checklist | `docs/vmodel/10-system-test-plan.md`, `docs/vmodel/13-verification-report.md`, `docs/vmodel/14-validation-report.md`, `docs/planning/risk-register.md` | qa_verification_agent; firmware_development_agent; product_requirements_agent | HIL gate `ST-006`; GitHub Actions `CI` job `test`; manual evidence review gate | Revert PR branch to previous passing SHA and create/update defect issue for each failed hardware requirement | Real target board evidence closes LEDs, EN_Peripherals, I2C devices, measurement sequence, and push-button wake or records accepted deferral |
+| S7 release candidate | PR `S7 Release Candidate` / `agent/s7-release-candidate` | #114, #115, #116, #117, #118, #119, #120, #121, #122, #123, #124, #125, #126, #127 | SW-001, SW-002, SW-003, SW-004, SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-011, SW-012, SW-013, SW-014 | `docs/vmodel/13-verification-report.md`, `docs/vmodel/14-validation-report.md`, `docs/vmodel/15-code-review-report.md`, `docs/vmodel/16-security-review-report.md`, `docs/vmodel/17-release-notes.md`, `docs/release-evidence/manifest.json` | `python -m pytest`; release evidence manifest validation; security/review report completeness checks | all V-model reports; release notes; RTM closure; acceptance record | software_lead_agent; release_quality_agent; security_review_agent; product_requirements_agent | GitHub Actions `CI` job `test`; release-manifest gate; security-review gate; human approval gate | Revert PR branch to previous passing SHA and create/update defect issue for any failed release gate | Verification, validation, code review, security review, release notes, traceability, and human approval are complete |
 
-## PR Rules
+## Execution Rules
 
-- Each stage opens one or more issue-linked PRs.
-- Every PR must update V-model docs, tests, traceability, and review evidence.
-- CI is authoritative for automated gates.
+- Every stage opens the named PR from the named branch.
+- Every stage updates the listed V-model docs, tests, traceability, and review evidence.
+- CI is authoritative for automated gates; manual evidence is allowed only when named in the row.
 - The Software Lead cannot waive failing deterministic gates; only the human can accept documented deferred evidence.
+- If any stage fails, revert the PR branch to the previous passing SHA and create/update defect issue with failed command, evidence artifact, and affected requirement IDs.
 """
 
 
