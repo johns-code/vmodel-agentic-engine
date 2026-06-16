@@ -99,3 +99,13 @@ PlantSpeak is configured as the first project test target. See `docs/plantspeak-
 ## Agent Governance
 
 The engine includes a Software Lead Agent role, specialist review roles, three-review minimums for design artifacts, arbitration records for dev/test disputes, and quality policy gates. See `docs/agent-governance.md`.
+
+## GitHub Delivery
+
+The engine can deliver a generated project into a GitHub product repo with artifacts, issues, Project links, implementation branch, PR, and CI.
+
+```powershell
+vmodel-engine deliver examples\plantspeak_requirements.txt --repo johns-code/plantspeak --output runs\plantspeak-delivery --project-name "PlantSpeak"
+```
+
+See `docs/github-delivery.md`.

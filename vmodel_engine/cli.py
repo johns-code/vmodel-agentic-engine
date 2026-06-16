@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from vmodel_engine.delivery import deliver_project
 from vmodel_engine.engine import build_project
 from vmodel_engine.github import inspect_github_project, load_github_project_config, render_github_project_status
 from vmodel_engine.pipeline import generate_initial_artifacts
@@ -23,6 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--output", "-o", type=Path, default=Path("runs/build"), help="Output directory for the workflow run.")
     build.add_argument("--project-name", help="Project name to use in generated artifacts.")
     build.add_argument("--project-type", default="python-cli", help="Generated project type. Currently: python-cli.")
+
+    deliver = subparsers.add_parser("deliver", help="Deliver a generated project to GitHub repo/issues/PR.")
+    deliver.add_argument("requirements_file", type=Path, help="Path to a plain-text requirements brief.")
+    deliver.add_argument("--repo", required=True, help="Target product repository, for example johns-code/plantspeak.")
+    deliver.add_argument("--output", "-o", type=Path, default=Path("runs/delivery"), help="Output directory for local delivery evidence.")
+    deliver.add_argument("--project-name", required=True, help="Product project name.")
+    deliver.add_argument("--project-type", default="python-cli", help="Generated project type. Currently: python-cli.")
 
     subparsers.add_parser("ready", help="Print supported project intake capabilities.")
     subparsers.add_parser("doctor", help="Inspect available open-source developer tools.")
@@ -56,6 +64,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Artifact reviews: {len(run.artifact_reviews)}")
         print(f"Arbitrations: {len(run.arbitration_records)}")
         return 0 if run.status == "ready_for_human_acceptance" else 1
+    if args.command == "deliver":
+        result = deliver_project(args.requirements_file, args.output, args.repo, args.project_name, args.project_type)
+        print(f"Delivery status: {result.workflow_status}")
+        print(f"Repository: {result.repository_url}")
+        print(f"Project: {result.project_url}")
+        print(f"Issues created: {len(result.issues)}")
+        if result.pull_request:
+            print(f"Pull request: {result.pull_request.url}")
+        return 0 if result.workflow_status == "ready_for_human_acceptance" else 1
     if args.command == "ready":
         print("Ready to accept the first project.")
         print("Supported project types: python-cli")

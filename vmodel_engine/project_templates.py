@@ -82,6 +82,11 @@ description = "Generated project for {package.project_name}"
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
 [project.scripts]
 {package_name.replace('_', '-')} = "{package_name}.cli:main"
 

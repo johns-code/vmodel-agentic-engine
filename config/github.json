@@ -3,5 +3,6 @@
   "project_number": 2,
   "project_title": "PlantSpeak",
   "project_url": "https://github.com/users/johns-code/projects/2",
+  "default_product_repo": "johns-code/plantspeak",
   "default_project_type": "python-cli"
 }

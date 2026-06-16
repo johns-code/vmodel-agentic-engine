@@ -13,6 +13,7 @@ def test_load_github_project_config(tmp_path: Path) -> None:
                 "project_number": 2,
                 "project_title": "PlantSpeak",
                 "project_url": "https://github.com/users/johns-code/projects/2",
+                "default_product_repo": "johns-code/plantspeak",
             }
         ),
         encoding="utf-8",
@@ -23,3 +24,4 @@ def test_load_github_project_config(tmp_path: Path) -> None:
     assert config.owner == "johns-code"
     assert config.project_number == 2
     assert config.project_title == "PlantSpeak"
+    assert config.default_product_repo == "johns-code/plantspeak"

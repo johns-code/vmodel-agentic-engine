@@ -131,6 +131,40 @@ class QualityPolicyResult:
 
 
 @dataclass(frozen=True)
+class DeliveryIssue:
+    id: str
+    number: int
+    title: str
+    url: str
+    requirement_ids: list[str]
+
+
+@dataclass(frozen=True)
+class DeliveryPullRequest:
+    number: int
+    title: str
+    url: str
+    branch: str
+    status: str
+
+
+@dataclass(frozen=True)
+class DeliveryResult:
+    repository: str
+    repository_url: str
+    project_url: str
+    branch: str
+    artifacts_committed: bool
+    issues: list[DeliveryIssue]
+    pull_request: DeliveryPullRequest | None
+    workflow_status: str
+    local_run_dir: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class WorkflowRun:
     project_name: str
     project_type: str
