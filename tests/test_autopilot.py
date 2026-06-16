@@ -31,9 +31,10 @@ def test_write_plantspeak_vertical_slice_creates_domain_code(tmp_path: Path) -> 
 
     written = write_plantspeak_vertical_slice(tmp_path, package, issues)
 
-    assert "plantspeak\\devices.py" in written
-    assert "plantspeak\\icd.py" in written
-    assert "tests\\test_cli.py" in written
+    normalized = {path.replace("\\", "/") for path in written}
+    assert "plantspeak/devices.py" in normalized
+    assert "plantspeak/icd.py" in normalized
+    assert "tests/test_cli.py" in normalized
     assert (tmp_path / "plantspeak" / "data" / "requirements.json").exists()
     assert "P0_5" in (tmp_path / "plantspeak" / "pins.py").read_text(encoding="utf-8")
     assert "canned-dev-mode-data" in (tmp_path / "plantspeak" / "devices.py").read_text(encoding="utf-8")
