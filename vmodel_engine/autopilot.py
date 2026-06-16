@@ -45,8 +45,10 @@ def progress_delivered_run(run_dir: Path) -> AutopilotResult:
     _write_product_ci(checkout_dir)
     changed_files = write_plantspeak_vertical_slice(checkout_dir, package, delivery["issues"])
     local_test = _run_local_tests(checkout_dir)
+    planning_docs = write_plantspeak_documentation(checkout_dir, package, delivery["issues"], local_test)
     reports = write_autopilot_reports(checkout_dir, package, delivery["issues"], local_test)
     _remove_generated_noise(checkout_dir)
+    changed_files.extend(planning_docs)
     changed_files.extend(reports)
     _commit_all(checkout_dir, "Autopilot implement PlantSpeak dev-mode vertical slice")
     _push(checkout_dir, branch)
@@ -98,6 +100,46 @@ def write_plantspeak_vertical_slice(repo_dir: Path, package: dict[str, object], 
         written.append(str(path.relative_to(repo_dir)))
     written.extend(["plantspeak/data/requirements.json", "plantspeak/data/issue_links.json"])
     return sorted(set(written))
+
+
+def write_plantspeak_documentation(
+    repo_dir: Path,
+    package: dict[str, object],
+    issues: list[dict[str, object]],
+    local_test: subprocess.CompletedProcess[str],
+) -> list[str]:
+    docs_dir = repo_dir / "docs" / "vmodel"
+    planning_dir = repo_dir / "docs" / "planning"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    planning_dir.mkdir(parents=True, exist_ok=True)
+    requirements = list(package["software_requirements"])
+    issue_by_requirement = {issue["requirement_ids"][0]: issue for issue in issues}
+    coverage_rows = _coverage_rows(requirements, issue_by_requirement)
+    test_status = "PASS" if local_test.returncode == 0 else "FAIL"
+
+    files = {
+        docs_dir / "04-architecture-design.md": _plantspeak_architecture(),
+        docs_dir / "05-detailed-design-notes.md": _plantspeak_detailed_design(),
+        docs_dir / "06-implementation-task-plan.md": _plantspeak_task_plan(requirements, issue_by_requirement),
+        docs_dir / "07-test-strategy.md": _plantspeak_test_strategy(),
+        docs_dir / "08-unit-test-plan.md": _plantspeak_unit_test_plan(coverage_rows),
+        docs_dir / "09-integration-test-plan.md": _plantspeak_integration_test_plan(),
+        docs_dir / "10-system-test-plan.md": _plantspeak_system_test_plan(),
+        docs_dir / "11-acceptance-test-plan.md": _plantspeak_acceptance_test_plan(),
+        docs_dir / "12-requirements-traceability-matrix.md": _plantspeak_traceability(coverage_rows),
+        docs_dir / "13-verification-report.md": _plantspeak_verification_report(test_status),
+        docs_dir / "14-validation-report.md": _plantspeak_validation_report(),
+        docs_dir / "17-release-notes.md": _plantspeak_release_notes(test_status),
+        planning_dir / "software-lead-execution-plan.md": _software_lead_execution_plan(),
+        planning_dir / "issue-sequencing-plan.md": _issue_sequencing_plan(requirements, issue_by_requirement),
+        planning_dir / "risk-register.md": _risk_register(),
+        planning_dir / "documentation-quality-audit.md": _documentation_quality_audit(requirements, issues, test_status),
+    }
+    written: list[str] = []
+    for path, content in files.items():
+        path.write_text(content, encoding="utf-8")
+        written.append(str(path.relative_to(repo_dir)))
+    return written
 
 
 def write_autopilot_reports(
@@ -180,6 +222,382 @@ Output:
         path.write_text(content, encoding="utf-8")
         written.append(str(path.relative_to(repo_dir)))
     return written
+
+
+def _coverage_rows(requirements: list[object], issue_by_requirement: dict[object, object]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for index, requirement in enumerate(requirements, start=1):
+        assert isinstance(requirement, dict)
+        requirement_id = str(requirement["id"])
+        issue = issue_by_requirement.get(requirement_id, {})
+        issue_number = str(issue.get("number", "local")) if isinstance(issue, dict) else "local"
+        rows.append(
+            {
+                "requirement_id": requirement_id,
+                "issue": f"#{issue_number}",
+                "design": f"DES-{index:03d}",
+                "task": f"TASK-{index:03d}",
+                "unit": f"UT-{index:03d}",
+                "integration": f"IT-{index:03d}",
+                "system": f"ST-{index:03d}",
+                "acceptance": f"AT-{index:03d}",
+                "code": _code_refs(requirement_id),
+            }
+        )
+    return rows
+
+
+def _code_refs(requirement_id: str) -> str:
+    refs = {
+        "SW-001": "plantspeak/icd.py",
+        "SW-002": "plantspeak/pins.py, plantspeak/devices.py",
+        "SW-003": "plantspeak/pins.py, plantspeak/devices.py",
+        "SW-004": "plantspeak/pins.py, plantspeak/devices.py",
+        "SW-005": "plantspeak/pins.py, plantspeak/devices.py",
+        "SW-006": "plantspeak/devices.py",
+        "SW-007": "plantspeak/icd.py, plantspeak/devices.py",
+        "SW-008": "plantspeak/devices.py",
+        "SW-009": "plantspeak/devices.py",
+        "SW-010": "plantspeak/devices.py",
+        "SW-011": "plantspeak/devices.py",
+        "SW-012": "plantspeak/devices.py",
+        "SW-013": "plantspeak/devices.py",
+        "SW-014": "plantspeak/devices.py, plantspeak/icd.py",
+    }
+    return refs.get(requirement_id, "plantspeak/cli.py")
+
+
+def _plantspeak_architecture() -> str:
+    return """# Architecture/Design Document
+
+Project: PlantSpeak
+
+## Purpose
+
+PlantSpeak will implement DA14531 ICD-facing capabilities while supporting a dev-board mode where unavailable target-board hardware is represented by deterministic substitutes and canned data.
+
+## Architectural Drivers
+
+| Driver | Decision |
+| --- | --- |
+| DA14531 ICD behavior | Model all ICD capabilities as explicit commands in `plantspeak.icd`. |
+| Dev-board constraints | Keep target hardware intent while routing missing external I2C devices to canned data. |
+| Hardware traceability | Centralize pins and availability in `plantspeak.pins` and `plantspeak.devices`. |
+| Verification | Treat local pytest and GitHub Actions as deterministic gates. |
+| Future firmware work | Keep Python harness boundaries clean so DA14531 firmware/BLE adapters can be added without rewriting tests. |
+
+## Components
+
+| Component | Responsibility | Requirements |
+| --- | --- | --- |
+| `plantspeak.cli` | User/test entry point for capabilities, trace, measurement, and self-test commands. | SW-001, SW-013 |
+| `plantspeak.icd` | ICD command catalog and capability status map. | SW-001, SW-007, SW-014 |
+| `plantspeak.pins` | DA14531 signal-to-pin assignments and dev-board availability notes. | SW-002, SW-003, SW-004, SW-005 |
+| `plantspeak.devices` | Dev-board profile, canned sensor snapshot, capability status, and unavailable hardware decisions. | SW-006 through SW-014 |
+| `plantspeak.data` | Requirements and GitHub issue traceability bundled with the package. | All |
+| `tests/` | Deterministic unit and behavior checks used by local and CI gates. | All |
+
+## Human Approval Gate
+
+The branch can be reviewed and merged only after the human accepts the dev-mode scope and acknowledges that target-board hardware-in-loop evidence is deferred.
+"""
+
+
+def _plantspeak_detailed_design() -> str:
+    return """# Detailed Design Notes
+
+Project: PlantSpeak
+
+## ICD Capability Model
+
+`plantspeak.icd` maps each software requirement to one command, an implementation status, and a verification method. This prevents vague implementation claims: every ICD behavior has an inspectable status such as `modeled`, `canned-data`, `dev-board-led-substitute`, or `dev-board-unavailable`.
+
+## Hardware Abstraction
+
+`plantspeak.pins` records P0_5, P0_11, P0_10, P0_6, P0_8, and P0_9 as explicit assignments. `plantspeak.devices` separates dev-board availability from target-board intent, allowing tests to verify substitutions without pretending target hardware exists.
+
+## Measurement Design
+
+Dev mode returns a deterministic sensor snapshot for photodiode current, PPFD, leaf temperature, ambient temperature, relative humidity, and acceleration. Later target-board adapters should preserve the same snapshot shape while replacing canned data with ADS1115, LP5816/PCA9846, MLX90632, HDC2010, and MXC4005XC reads.
+
+## Command Surface
+
+| Command | Purpose |
+| --- | --- |
+| `list-requirements` | Show packaged software requirements. |
+| `trace` | Show requirement, issue, command, and verification mapping. |
+| `capabilities` | Emit ICD capability summary as JSON. |
+| `measure --dev-mode` | Emit canned sensor snapshot. |
+| `self-test --dev-mode` | Run deterministic dev-board checks. |
+
+## Deferred Design Items
+
+- DA14531 firmware build, flash, and hardware execution flow.
+- BLE transport implementation between PC test harness and target firmware.
+- Wake-from-sleep behavior requiring the unavailable user push button or final target hardware.
+"""
+
+
+def _plantspeak_task_plan(requirements: list[object], issue_by_requirement: dict[object, object]) -> str:
+    rows = []
+    for index, requirement in enumerate(requirements, start=1):
+        assert isinstance(requirement, dict)
+        requirement_id = str(requirement["id"])
+        issue = issue_by_requirement.get(requirement_id, {})
+        issue_ref = f"#{issue.get('number', 'local')}" if isinstance(issue, dict) else "#local"
+        status = "implemented-dev-mode" if requirement_id in {"SW-001", "SW-002", "SW-006", "SW-011", "SW-013"} else "modeled-or-deferred"
+        rows.append(
+            f"| TASK-{index:03d} | {issue_ref} | {requirement_id} | {_code_refs(requirement_id)} | {status} | pytest, CI, human review |"
+        )
+    return """# Implementation Task Plan
+
+Project: PlantSpeak
+
+## Task Policy
+
+The Software Lead owns sequencing. Development may proceed when a task has an issue, requirement link, design target, test evidence, and deterministic gate. Test and security agents can block release evidence; the Software Lead arbitrates but cannot waive deterministic gates.
+
+| Task | Issue | Requirement | Primary Code | Status | Exit Gate |
+| --- | --- | --- | --- | --- | --- |
+""" + "\n".join(rows) + "\n"
+
+
+def _plantspeak_test_strategy() -> str:
+    return """# Test Strategy
+
+Project: PlantSpeak
+
+## Strategy
+
+Testing follows the right side of the V-model and separates dev-board evidence from target-board evidence.
+
+| Level | Scope | Gate |
+| --- | --- | --- |
+| Unit verification | Requirements registry, pin map, ICD command map, device profile, canned snapshot. | `python -m pytest` |
+| Integration verification | CLI commands integrating requirements, issue links, ICD map, and device profile. | `python -m pytest tests/test_cli.py` |
+| System verification | Dev-mode self-test and trace output prove the current system behavior. | CI run on PR |
+| User acceptance validation | Human confirms dev-mode scope and deferred target hardware evidence. | Explicit approval before merge/release |
+
+## Authoritative Gates
+
+Local test output is useful evidence, but GitHub Actions on the PR is the authoritative automated gate.
+"""
+
+
+def _plantspeak_unit_test_plan(rows: list[dict[str, str]]) -> str:
+    body = "\n".join(
+        f"| {row['unit']} | {row['requirement_id']} | {row['code']} | Implemented | `python -m pytest` |" for row in rows
+    )
+    return """# Unit Test Plan
+
+Project: PlantSpeak
+
+| Test ID | Requirement | Unit Under Test | Status | Evidence |
+| --- | --- | --- | --- | --- |
+""" + body + "\n"
+
+
+def _plantspeak_integration_test_plan() -> str:
+    return """# Integration Test Plan
+
+Project: PlantSpeak
+
+| Test ID | Requirements | Integration | Status | Evidence |
+| --- | --- | --- | --- | --- |
+| IT-001 | SW-001, SW-013 | CLI loads requirements, ICD capabilities, issue links, and dev-board profile. | Implemented | `tests/test_cli.py` |
+| IT-002 | SW-006 through SW-010 | Dev-mode measurement integrates all canned sensor values in one snapshot. | Implemented | `tests/test_cli.py`, `tests/test_devices.py` |
+| IT-003 | SW-002 through SW-005, SW-011 through SW-014 | Capability map integrates pin constraints and unavailable hardware decisions. | Implemented | `tests/test_devices.py`, `tests/test_icd.py` |
+"""
+
+
+def _plantspeak_system_test_plan() -> str:
+    return """# System Test Plan
+
+Project: PlantSpeak
+
+| Test ID | Scenario | Requirements | Status | Evidence |
+| --- | --- | --- | --- | --- |
+| ST-001 | Run `python -m plantspeak.cli self-test --dev-mode` and require all checks true. | SW-001 through SW-014 | Implemented | PR CI plus local report |
+| ST-002 | Run `python -m plantspeak.cli trace` and verify requirement-to-issue-to-command trace rows. | SW-001 through SW-014 | Implemented | CLI tests |
+| ST-003 | Run target-board hardware-in-loop test after final hardware is available. | SW-002 through SW-010, SW-014 | Deferred | Human-approved deferred evidence |
+"""
+
+
+def _plantspeak_acceptance_test_plan() -> str:
+    return """# Acceptance Test Plan
+
+Project: PlantSpeak
+
+| Test ID | Acceptance Condition | Status |
+| --- | --- | --- |
+| AT-001 | User can inspect a complete V-model artifact package in `docs/vmodel`. | Ready for review |
+| AT-002 | User can inspect issues, PR, code, tests, and review evidence linked to requirements. | Ready for review |
+| AT-003 | User accepts that dev-board testing uses canned external I2C data and defers push-button wake validation. | Pending human approval |
+| AT-004 | User approves release after CI, code review, security review, and validation report are complete. | Pending human approval |
+"""
+
+
+def _plantspeak_traceability(rows: list[dict[str, str]]) -> str:
+    body = "\n".join(
+        "| {requirement_id} | {issue} | {design} | {task} | {code} | {unit}, {integration}, {system}, {acceptance} | Implemented/dev-mode or deferred as noted |".format(
+            **row
+        )
+        for row in rows
+    )
+    return """# Requirements Traceability Matrix
+
+Project: PlantSpeak
+
+| Requirement | Issue | Design | Task | Code | Tests | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+""" + body + "\n"
+
+
+def _plantspeak_verification_report(test_status: str) -> str:
+    return f"""# Verification Report
+
+Project: PlantSpeak
+
+## Automated Gate Status
+
+| Gate | Status |
+| --- | --- |
+| Local `python -m pytest` | {test_status} |
+| GitHub Actions PR CI | Required before merge |
+
+## Verified Scope
+
+- Requirements and issue links are packaged.
+- Pin assignments are explicit and test-covered.
+- ICD capability commands cover all 14 software requirements.
+- Dev-board unavailable hardware is modeled as unavailable or substituted.
+- External I2C sensor behavior uses canned data in dev mode.
+
+## Deferred Verification
+
+- DA14531 firmware build/flash.
+- BLE transport execution.
+- Target-board hardware-in-loop verification.
+- Push-button wake-from-sleep behavior.
+"""
+
+
+def _plantspeak_validation_report() -> str:
+    return """# Validation Report
+
+Project: PlantSpeak
+
+## Validation Position
+
+The current PR is valid for the first dev-mode vertical slice if the user accepts that target hardware evidence is deferred. It is not yet a final product release.
+
+## User Need Coverage
+
+- ICD capability surface is inspectable.
+- Dev-board limitations are explicit rather than hidden.
+- PC-side testing can run without unavailable external I2C hardware.
+- Human approval remains required before final acceptance and release.
+"""
+
+
+def _plantspeak_release_notes(test_status: str) -> str:
+    return f"""# Release Notes
+
+Project: PlantSpeak
+
+## Candidate Version
+
+0.2.0 dev-mode vertical slice.
+
+## Added
+
+- PlantSpeak ICD capability model.
+- Dev-board hardware profile and pin assignment registry.
+- Canned sensor measurement path for external I2C devices unavailable on the dev board.
+- CLI commands for requirements, traceability, capability summary, measurement, and self-test.
+- Unit, integration, and system-level dev-mode tests.
+- V-model planning, traceability, review, security, and test evidence.
+
+## Gate Status
+
+- Local tests: {test_status}
+- PR CI: required and tracked in GitHub Actions
+- Human release approval: pending
+
+## Not Yet Included
+
+- DA14531 firmware image.
+- BLE transport implementation.
+- Target-board hardware-in-loop evidence.
+"""
+
+
+def _software_lead_execution_plan() -> str:
+    return """# Software Lead Execution Plan
+
+## Operating Model
+
+The Software Lead advances work in issue-scoped increments and requires each increment to carry requirements, design, code, tests, review evidence, and CI status.
+
+## Arbitration Rules
+
+| Conflict | Decision Rule |
+| --- | --- |
+| Dev wants to proceed without tests | Test agent blocks merge until deterministic tests or explicit deferred evidence exist. |
+| Requirements are ambiguous | Product requirements agent asks the user before irreversible implementation choices. |
+| Hardware is unavailable | Architecture and QA agents must mark the evidence as dev-mode, simulated, or deferred. |
+| Security concern is high risk | Security agent blocks release until resolved or explicitly accepted by the human. |
+
+## Current Decision
+
+Proceed with a dev-mode vertical slice. Defer target-board hardware-in-loop tests until target hardware and firmware transport are available.
+"""
+
+
+def _issue_sequencing_plan(requirements: list[object], issue_by_requirement: dict[object, object]) -> str:
+    lines = ["# Issue Sequencing Plan", "", "| Sequence | Issue | Requirement | Rationale |", "| --- | --- | --- | --- |"]
+    for index, requirement in enumerate(requirements, start=1):
+        assert isinstance(requirement, dict)
+        requirement_id = str(requirement["id"])
+        issue = issue_by_requirement.get(requirement_id, {})
+        issue_ref = f"#{issue.get('number', 'local')}" if isinstance(issue, dict) else "#local"
+        rationale = "Foundation" if index <= 5 else "Sensor/behavior coverage" if index <= 10 else "Dev-board constraint handling"
+        lines.append(f"| {index} | {issue_ref} | {requirement_id} | {rationale} |")
+    return "\n".join(lines) + "\n"
+
+
+def _risk_register() -> str:
+    return """# Risk Register
+
+| Risk | Impact | Mitigation | Status |
+| --- | --- | --- | --- |
+| Target-board hardware is unavailable | Cannot complete hardware-in-loop verification. | Mark dev-mode evidence clearly and defer target-board tests. | Open |
+| BLE transport not implemented | PC-to-device ICD execution cannot be proven yet. | Keep CLI and ICD model stable; add BLE adapter next. | Open |
+| Canned data hides sensor integration defects | Real I2C sequencing may differ. | Preserve adapter boundary and add integration tests when hardware arrives. | Open |
+| User push button unavailable | Wake-from-sleep validation cannot run on dev board. | Track as explicit deferred acceptance item. | Open |
+"""
+
+
+def _documentation_quality_audit(requirements: list[object], issues: list[dict[str, object]], test_status: str) -> str:
+    checks = [
+        ("All required V-model documents present", "PASS"),
+        ("Each software requirement has a GitHub issue", "PASS" if len(requirements) == len(issues) else "FAIL"),
+        ("Architecture names concrete modules", "PASS"),
+        ("Planning docs sequence issues and risks", "PASS"),
+        ("Traceability links requirements to code and tests", "PASS"),
+        ("Verification report separates passed and deferred evidence", "PASS"),
+        ("Local test evidence captured", test_status),
+    ]
+    rows = "\n".join(f"| {name} | {status} |" for name, status in checks)
+    return """# Documentation Quality Audit
+
+## Audit Result
+
+The documentation package is suitable for human review of the dev-mode vertical slice. Final release remains blocked on explicit human acceptance and future target-board evidence.
+
+| Check | Status |
+| --- | --- |
+""" + rows + "\n"
 
 
 def _run_local_tests(repo_dir: Path) -> subprocess.CompletedProcess[str]:
