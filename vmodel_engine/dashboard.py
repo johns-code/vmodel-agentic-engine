@@ -259,7 +259,12 @@ _INDEX_HTML = r"""<!doctype html>
     </section>
   </main>
   <script>
-    async function loadState() {
+    function isEditing() {
+      const active = document.activeElement;
+      return active && ['TEXTAREA', 'INPUT'].includes(active.tagName);
+    }
+    async function loadState(options = {}) {
+      if (!options.force && isEditing()) return;
       const res = await fetch('/api/state');
       const state = await res.json();
       render(state);
@@ -304,16 +309,16 @@ _INDEX_HTML = r"""<!doctype html>
       await fetch('/api/questions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.fromEntries(form)) });
       event.target.question.value = '';
       event.target.context.value = '';
-      await loadState();
+      await loadState({ force: true });
     });
     async function answerQuestion(event, id) {
       event.preventDefault();
       const form = new FormData(event.target);
       await fetch(`/api/questions/${id}/answer`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.fromEntries(form)) });
-      await loadState();
+      await loadState({ force: true });
     }
     loadState();
-    setInterval(loadState, 5000);
+    setInterval(() => loadState(), 5000);
   </script>
 </body>
 </html>
