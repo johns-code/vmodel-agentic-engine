@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/vmodel-agentic-engine/traceability-matrix.schema.json",
+  "title": "RequirementsTraceabilityMatrix",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "requirement_id",
+      "user_need_id",
+      "design_refs",
+      "task_refs",
+      "test_refs",
+      "verification_refs",
+      "status"
+    ],
+    "properties": {
+      "requirement_id": { "type": "string", "pattern": "^SW-[0-9]{3}$" },
+      "user_need_id": { "type": "string", "pattern": "^UN-[0-9]{3}$" },
+      "design_refs": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+      "task_refs": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+      "test_refs": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+      "verification_refs": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+      "status": { "enum": ["planned", "implemented", "verified", "validated", "released"] }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+- Users must be able to submit a high-level software requirements brief.
+- The engine should generate structured requirements from the brief.
+- Every software requirement must be traceable to user needs, planned tasks, tests, and verification evidence.
+- The engine should produce Markdown artifacts for human review.
+- Final release should require human approval.

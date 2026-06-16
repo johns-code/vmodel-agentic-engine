@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/vmodel-agentic-engine/artifact-package.schema.json",
+  "title": "ArtifactPackage",
+  "type": "object",
+  "required": [
+    "project_name",
+    "created_at",
+    "source_brief",
+    "user_needs",
+    "system_requirements",
+    "software_requirements",
+    "implementation_tasks",
+    "traceability"
+  ],
+  "properties": {
+    "project_name": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "source_brief": { "type": "string", "minLength": 1 },
+    "user_needs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/user_need" }
+    },
+    "system_requirements": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/requirement" }
+    },
+    "software_requirements": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/requirement" }
+    },
+    "implementation_tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/implementation_task" }
+    },
+    "traceability": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/trace_link" }
+    }
+  },
+  "$defs": {
+    "user_need": {
+      "type": "object",
+      "required": ["id", "statement", "rationale", "source"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^UN-[0-9]{3}$" },
+        "statement": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string" },
+        "source": { "type": "string" }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "required": ["id", "parent_id", "statement", "priority", "acceptance_criteria"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(SYS|SW)-[0-9]{3}$" },
+        "parent_id": { "type": "string" },
+        "statement": { "type": "string", "minLength": 1 },
+        "priority": { "enum": ["must", "should", "could"] },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        }
+      }
+    },
+    "implementation_task": {
+      "type": "object",
+      "required": ["id", "title", "description", "requirement_ids", "suggested_owner_role", "status"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^TASK-[0-9]{3}$" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "requirement_ids": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^SW-[0-9]{3}$" },
+          "minItems": 1
+        },
+        "suggested_owner_role": { "type": "string" },
+        "status": { "enum": ["planned", "in_progress", "blocked", "done"] }
+      }
+    },
+    "trace_link": {
+      "type": "object",
+      "required": ["requirement_id", "user_need_id", "design_refs", "task_refs", "test_refs", "verification_refs", "status"],
+      "properties": {
+        "requirement_id": { "type": "string", "pattern": "^SW-[0-9]{3}$" },
+        "user_need_id": { "type": "string", "pattern": "^UN-[0-9]{3}$" },
+        "design_refs": { "type": "array", "items": { "type": "string" } },
+        "task_refs": { "type": "array", "items": { "type": "string" } },
+        "test_refs": { "type": "array", "items": { "type": "string" } },
+        "verification_refs": { "type": "array", "items": { "type": "string" } },
+        "status": { "enum": ["planned", "implemented", "verified", "validated", "released"] }
+      }
+    }
+  }
+}

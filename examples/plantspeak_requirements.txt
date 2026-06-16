@@ -1,0 +1,5 @@
+- Users must be able to record basic plant observations from a command-line interface.
+- The app should store plant observation entries in a local file.
+- Users must be able to list previously recorded plant observations.
+- The system should provide a traceable test plan for each plant observation requirement.
+- Final acceptance should require human review before release.
