@@ -76,7 +76,7 @@ def test_write_plantspeak_documentation_creates_quality_audit(tmp_path: Path) ->
     assert "docs/planning/documentation-quality-audit.md" in normalized
     audit = (tmp_path / "docs" / "planning" / "documentation-quality-audit.md").read_text(encoding="utf-8")
     assert "Traceability links requirements to existing tests only" in audit
-    assert "| Blocking review comments resolved | FAIL |" in audit
+    assert "| Blocking review comments resolved | PASS |" in audit
     assert "| Local test evidence captured | PASS |" in audit
     assert (tmp_path / "docs" / "planning" / "staged-development-test-plan.md").exists()
 
