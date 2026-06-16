@@ -30,12 +30,12 @@ def generate_lead_clarifications(requirements_path: Path, run_dir: Path) -> list
                 topic="dev-mode-icd",
             )
         )
-    if "da14531" in lowered:
+    if any(term in lowered for term in ["firmware", "embedded", "mcu", "microcontroller", "target hardware"]):
         generated.append(
             create_question(
                 run_dir,
-                "Which DA14531 build path should be authoritative for CI or manual verification: Keil uVision, command-line UV4 build, or another build script?",
-                "The toolchain document lists common options but does not select the project-specific build authority.",
+                "Which target-platform build path should be authoritative for CI or manual verification?",
+                "The requirements identify an embedded target, but the project still needs one selected build authority and evidence path.",
                 topic="firmware-build",
             )
         )
@@ -52,8 +52,8 @@ def generate_lead_clarifications(requirements_path: Path, run_dir: Path) -> list
         generated.append(
             create_question(
                 run_dir,
-                "For unavailable I2C devices, should the firmware use compile-time stubs, runtime dev-mode providers, or a hardware abstraction layer selected at startup?",
-                "The implementation architecture depends on how simulated ADS1115, LP5816, MLX90632, HDC2010, and MXC4005 data are injected.",
+                "For unavailable external bus devices, should the implementation use compile-time stubs, runtime dev-mode providers, or a hardware abstraction layer selected at startup?",
+                "The implementation architecture depends on how simulated device data is injected when target hardware is unavailable.",
                 topic="i2c-abstraction",
             )
         )
@@ -65,21 +65,21 @@ def generate_lead_clarifications(requirements_path: Path, run_dir: Path) -> list
                 topic="i2c-errors",
             )
         )
-    if "ads1115" in lowered or "photodiode" in lowered or "ppfd" in lowered:
+    if any(term in lowered for term in ["sensor", "measurement", "measure", "calibration", "reading"]):
         generated.append(
             create_question(
                 run_dir,
-                "What measurement cadence, averaging, units, and calibration assumptions should be used for photodiode and PPFD readings in the first release?",
-                "The hardware channels are identified, but the measurement behavior is not yet testable.",
+                "What measurement cadence, averaging, units, and calibration assumptions should be used for the first release?",
+                "The measurement sources are identified, but the expected measurement behavior is not yet testable.",
                 topic="measurement-behavior",
             )
         )
-    if "pca9846" in lowered or "lp5816" in lowered:
+    if "led" in lowered or "actuator" in lowered:
         generated.append(
             create_question(
                 run_dir,
-                "What LED sequencing, intensity defaults, timing, and settling delay are required when measuring each wavelength?",
-                "External LEDs and mux channels are specified, but measurement sequencing needs acceptance criteria.",
+                "What actuator sequencing, intensity defaults, timing, and settling delay are required during measurement?",
+                "External actuators and switching channels are specified, but measurement sequencing needs acceptance criteria.",
                 topic="led-measurement-sequence",
             )
         )
@@ -105,7 +105,7 @@ def _core_product_questions(run_dir: Path) -> list[ClarificationQuestion]:
     return [
         create_question(
             run_dir,
-            "What is the smallest user-visible behavior that should count as the first successful PlantSpeak release?",
+            "What is the smallest user-visible behavior that should count as the first successful release?",
             "The Software Lead needs a release objective before allowing implementation to proceed.",
             topic="release-objective",
         ),

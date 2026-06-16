@@ -56,7 +56,7 @@ def deliver_project(
     _checkout_branch(checkout_dir, branch)
     _write_product_ci(checkout_dir)
     _copy_generated_project(output_dir / "generated-project", checkout_dir)
-    _commit_all(checkout_dir, "Add generated PlantSpeak implementation")
+    _commit_all(checkout_dir, f"Add generated {project_name} implementation")
     _push(checkout_dir, branch)
     pull_request = _create_or_view_pr(repo, branch, project_name, issues)
 
@@ -240,7 +240,7 @@ def _create_or_view_pr(repo: str, branch: str, project_name: str, issues: list[D
             "--head",
             branch,
             "--title",
-            "Add generated PlantSpeak implementation",
+            f"Add generated {project_name} implementation",
             "--body",
             body,
         ],

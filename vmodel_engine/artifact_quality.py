@@ -62,24 +62,16 @@ DETAILED_DESIGN_INPUTS = {
 }
 
 FIRMWARE_ARCHITECTURE_REQUIRED_TERMS = [
-    "icd_dispatch",
-    "measurement_service",
-    "hal_i2c",
-    "ble_transport",
-    "ads1115_driver",
-    "pca9846_driver",
-    "lp5816_driver",
-    "mlx90632_driver",
-    "hdc2010_driver",
-    "mxc4005_driver",
-    "P0_5",
-    "P0_11",
-    "P0_10",
-    "P0_6",
-    "P0_8",
-    "P0_9",
-    "S5",
-    "S6",
+    "command",
+    "service",
+    "HAL",
+    "transport",
+    "driver",
+    "pin",
+    "bus",
+    "verification",
+    "evidence",
+    "stage",
 ]
 
 
@@ -246,10 +238,10 @@ def evaluate_implementation_plan(path: Path) -> list[ArtifactQualityIssue]:
     )
 
     required_files = [
-        "plantspeak/contracts.py",
-        "plantspeak/trace.py",
-        "plantspeak/transport.py",
-        "plantspeak/adapters/i2c.py",
+        "contracts.py",
+        "trace.py",
+        "transport.py",
+        "adapters/i2c.py",
         "firmware/README.md",
         "docs/test-evidence/ST-006-hil-report.md",
     ]
@@ -350,7 +342,7 @@ def evaluate_detailed_design_inputs(repo_dir: Path) -> list[ArtifactQualityIssue
                 artifact=str(firmware_path),
                 check="firmware-architecture-specificity",
                 passed=not missing_firmware_terms,
-                message="Firmware architecture names required modules, pins, drivers, and stages."
+                message="Firmware architecture names required command, service, HAL, transport, driver, pin, bus, evidence, and stage concepts."
                 if not missing_firmware_terms
                 else f"Missing firmware architecture terms: {', '.join(missing_firmware_terms)}",
             )

@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     deliver = subparsers.add_parser("deliver", help="Deliver a generated project to GitHub repo/issues/PR.")
     deliver.add_argument("requirements_file", type=Path, help="Path to a requirements file or directory.")
-    deliver.add_argument("--repo", required=True, help="Target product repository, for example johns-code/plantspeak.")
+    deliver.add_argument("--repo", required=True, help="Target product repository, for example owner/repository.")
     deliver.add_argument("--output", "-o", type=Path, default=Path("runs/delivery"), help="Output directory for local delivery evidence.")
     deliver.add_argument("--project-name", required=True, help="Product project name.")
     deliver.add_argument("--project-type", default="python-cli", help="Generated project type. Currently: python-cli.")
