@@ -12,7 +12,9 @@ def test_read_requirements_input_from_directory(tmp_path: Path) -> None:
 
     assert "Source: User Requirements.txt" in text
     assert "Users must water plants" in text
-    assert "Source: toolchain.md" in text
+    assert "Reference Evidence" in text
+    assert "toolchain.md" in text
+    assert "Use test hardware" not in text
     assert "ignore.bin" not in text
 
 

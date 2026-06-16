@@ -12,6 +12,7 @@ from vmodel_engine.engine import build_project
 from vmodel_engine.github import add_issue_to_project, create_issue, ensure_repo, load_github_project_config
 from vmodel_engine.intake import copy_source_requirements
 from vmodel_engine.models import DeliveryIssue, DeliveryPullRequest, DeliveryResult
+from vmodel_engine.questions import questions_path
 
 
 def deliver_project(
@@ -41,6 +42,8 @@ def deliver_project(
     _copy_tree(output_dir / "artifacts", checkout_dir / "docs" / "vmodel")
     _copy_tree(output_dir / "agent-governance", checkout_dir / "docs" / "agent-governance")
     copy_source_requirements(requirements_path, checkout_dir / "docs" / "source-requirements")
+    if questions_path(output_dir).exists():
+        _copy_file(questions_path(output_dir), checkout_dir / "docs" / "agent-governance" / "orchestrator-questions.json")
     _copy_file(output_dir / "workflow-run.json", checkout_dir / "docs" / "vmodel" / "workflow-run.json")
     _copy_file(output_dir / "gate-results.json", checkout_dir / "docs" / "vmodel" / "gate-results.json")
     _copy_tree(output_dir / "release-evidence", checkout_dir / "docs" / "release-evidence")

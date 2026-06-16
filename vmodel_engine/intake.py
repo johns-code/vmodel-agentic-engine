@@ -13,12 +13,31 @@ def read_requirements_input(path: Path) -> str:
     if path.is_file():
         return _read_supported_file(path)
     if path.is_dir():
+        primary_files = _primary_requirement_files(path)
+        files_to_read = primary_files or [
+            file_path
+            for file_path in sorted(path.rglob("*"))
+            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_REQUIREMENT_EXTENSIONS
+        ]
         sections: list[str] = []
-        for file_path in sorted(path.rglob("*")):
-            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_REQUIREMENT_EXTENSIONS:
-                text = _read_supported_file(file_path).strip()
-                if text:
-                    sections.append(f"# Source: {file_path.name}\n\n{text}")
+        for file_path in files_to_read:
+            text = _read_supported_file(file_path).strip()
+            if text:
+                sections.append(f"# Source: {file_path.name}\n\n{text}")
+        reference_files = [
+            file_path.name
+            for file_path in sorted(path.rglob("*"))
+            if file_path.is_file()
+            and file_path.suffix.lower() in SUPPORTED_REQUIREMENT_EXTENSIONS
+            and file_path not in files_to_read
+        ]
+        if reference_files:
+            sections.append(
+                "# Reference Evidence\n\n"
+                "The following source documents are preserved as evidence and design inputs, "
+                "but are not automatically decomposed into implementation tasks. "
+                f"Reference documents: {', '.join(reference_files)}."
+            )
         if not sections:
             raise ValueError(f"no supported requirements files found in {path}")
         return "\n\n".join(sections)
@@ -51,6 +70,17 @@ def _read_supported_file(path: Path) -> str:
     if suffix == ".pdf":
         return _read_pdf(path)
     raise ValueError(f"unsupported requirements file type: {path}")
+
+
+def _primary_requirement_files(path: Path) -> list[Path]:
+    candidates = []
+    for file_path in sorted(path.rglob("*")):
+        if not file_path.is_file() or file_path.suffix.lower() not in SUPPORTED_REQUIREMENT_EXTENSIONS:
+            continue
+        normalized = re.sub(r"[^a-z0-9]+", " ", file_path.stem.lower()).strip()
+        if normalized in {"user requirements", "requirements"} or normalized.endswith(" requirements"):
+            candidates.append(file_path)
+    return candidates
 
 
 def _read_docx(path: Path) -> str:

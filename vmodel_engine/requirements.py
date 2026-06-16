@@ -11,11 +11,24 @@ _BULLET_RE = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+")
 def split_requirement_brief(brief: str) -> list[str]:
     """Extract candidate requirement statements from a high-level brief."""
     lines = [line.strip() for line in brief.splitlines() if line.strip()]
-    bullet_items = [_BULLET_RE.sub("", line).strip() for line in lines if _BULLET_RE.match(line)]
+    requirement_lines = [
+        line
+        for line in lines
+        if not line.startswith("#")
+        and not line.lower().startswith("reference documents:")
+        and not line.lower().startswith("the following source documents")
+    ]
+    bullet_items = [_BULLET_RE.sub("", line).strip() for line in requirement_lines if _BULLET_RE.match(line)]
+    prose_lines = [_BULLET_RE.sub("", line).strip() for line in requirement_lines if not _BULLET_RE.match(line)]
+    prose_candidates = []
+    for sentence in re.split(r"(?<=[.!?])\s+", " ".join(prose_lines)):
+        cleaned = sentence.strip(" .")
+        if cleaned and _is_actionable_statement(cleaned):
+            prose_candidates.append(cleaned)
     if bullet_items:
-        return _dedupe_preserve_order(bullet_items)
+        return _dedupe_preserve_order(prose_candidates + bullet_items)
 
-    sentences = re.split(r"(?<=[.!?])\s+", " ".join(lines))
+    sentences = re.split(r"(?<=[.!?])\s+", " ".join(requirement_lines))
     candidates = [sentence.strip(" .") for sentence in sentences if sentence.strip(" .")]
     return _dedupe_preserve_order(candidates)
 
@@ -82,6 +95,25 @@ def _priority_for(statement: str) -> str:
     if any(word in lowered for word in ("should", "important", "prefer")):
         return "should"
     return "could"
+
+
+def _is_actionable_statement(statement: str) -> bool:
+    lowered = statement.lower()
+    if any(phrase in lowered for phrase in ("should not", "must not", "not become a requirement")):
+        return False
+    return any(
+        lowered.startswith(prefix)
+        for prefix in (
+            "build ",
+            "use ",
+            "develop ",
+            "produce ",
+            "support ",
+            "implement ",
+            "test ",
+            "verify ",
+        )
+    ) or any(word in lowered for word in (" must ", " should ", " shall ", " required "))
 
 
 def _dedupe_preserve_order(items: list[str]) -> list[str]:
