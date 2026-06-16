@@ -5,7 +5,12 @@ from pathlib import Path
 import json
 import subprocess
 
-from vmodel_engine.autopilot import write_artifact_review_cycle, write_plantspeak_documentation, write_plantspeak_vertical_slice
+from vmodel_engine.autopilot import (
+    write_artifact_quality_gates,
+    write_artifact_review_cycle,
+    write_plantspeak_documentation,
+    write_plantspeak_vertical_slice,
+)
 
 
 def test_write_plantspeak_vertical_slice_creates_domain_code(tmp_path: Path) -> None:
@@ -100,3 +105,22 @@ def test_write_artifact_review_cycle_requires_three_reviews_per_doc(tmp_path: Pa
     assert summary["review_count"] == 9
     assert summary["reviews_per_artifact"] == 3
     assert summary["implementation_readiness"] == "blocked_pending_review_actions"
+
+
+def test_write_artifact_quality_gates_reports_system_test_plan_status(tmp_path: Path) -> None:
+    vmodel_dir = tmp_path / "docs" / "vmodel"
+    vmodel_dir.mkdir(parents=True)
+    write_plantspeak_documentation(
+        tmp_path,
+        {"software_requirements": [{"id": f"SW-{index:03d}"} for index in range(1, 15)]},
+        [{"number": 100 + index, "requirement_ids": [f"SW-{index:03d}"]} for index in range(1, 15)],
+        subprocess.CompletedProcess(args=["python", "-m", "pytest"], returncode=0, stdout="passed", stderr=""),
+    )
+
+    written = write_artifact_quality_gates(tmp_path)
+    normalized = {path.replace("\\", "/") for path in written}
+
+    assert "docs/reviews/artifact-quality-gates.json" in normalized
+    assert "docs/reviews/artifact-quality-gates.md" in normalized
+    payload = json.loads((tmp_path / "docs" / "reviews" / "artifact-quality-gates.json").read_text(encoding="utf-8"))
+    assert payload["passed"] is True

@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from vmodel_engine.delivery import _checkout_branch, _commit_all, _ensure_git_identity, _push, _write_product_ci
+from vmodel_engine.artifact_quality import evaluate_system_test_plan
 from vmodel_engine.github import run_gh
 
 
@@ -46,10 +47,12 @@ def progress_delivered_run(run_dir: Path) -> AutopilotResult:
     changed_files = write_plantspeak_vertical_slice(checkout_dir, package, delivery["issues"])
     local_test = _run_local_tests(checkout_dir)
     planning_docs = write_plantspeak_documentation(checkout_dir, package, delivery["issues"], local_test)
+    quality_docs = write_artifact_quality_gates(checkout_dir)
     reports = write_autopilot_reports(checkout_dir, package, delivery["issues"], local_test)
     review_cycle_docs = write_artifact_review_cycle(checkout_dir)
     _remove_generated_noise(checkout_dir)
     changed_files.extend(planning_docs)
+    changed_files.extend(quality_docs)
     changed_files.extend(reports)
     changed_files.extend(review_cycle_docs)
     _commit_all(checkout_dir, "Autopilot implement PlantSpeak dev-mode vertical slice")
@@ -287,6 +290,42 @@ def write_artifact_review_cycle(repo_dir: Path) -> list[str]:
         comment_file.write_text(_render_single_artifact_reviews(artifact_path, artifact_reviews), encoding="utf-8")
         written.append(str(comment_file.relative_to(repo_dir)))
     return written
+
+
+def write_artifact_quality_gates(repo_dir: Path) -> list[str]:
+    review_dir = repo_dir / "docs" / "reviews"
+    review_dir.mkdir(parents=True, exist_ok=True)
+    checks = evaluate_system_test_plan(repo_dir / "docs" / "vmodel" / "10-system-test-plan.md")
+    passed = all(check.passed for check in checks)
+    data = {
+        "passed": passed,
+        "checks": [check.to_dict() for check in checks],
+    }
+    json_path = review_dir / "artifact-quality-gates.json"
+    md_path = review_dir / "artifact-quality-gates.md"
+    json_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    md_path.write_text(_render_artifact_quality_gates(data), encoding="utf-8")
+    return [str(json_path.relative_to(repo_dir)), str(md_path.relative_to(repo_dir))]
+
+
+def _render_artifact_quality_gates(data: dict[str, object]) -> str:
+    rows = []
+    for check in data["checks"]:
+        rows.append(
+            f"| {check['check']} | {'PASS' if check['passed'] else 'FAIL'} | {check['message']} |"
+        )
+    return f"""# Artifact Quality Gates
+
+## Summary
+
+Status: {'PASS' if data['passed'] else 'FAIL'}
+
+## Checks
+
+| Check | Status | Message |
+| --- | --- | --- |
+{chr(10).join(rows)}
+"""
 
 
 def _reviewers_for_artifact(path: Path) -> list[dict[str, str]]:
@@ -752,11 +791,29 @@ def _plantspeak_system_test_plan() -> str:
 
 Project: PlantSpeak
 
-| Test ID | Scenario | Requirements | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| ST-001 | Run `python -m plantspeak.cli self-test --dev-mode` and require all checks true. | SW-001 through SW-014 | Implemented | PR CI plus local report |
-| ST-002 | Run `python -m plantspeak.cli trace` and verify requirement-to-issue-to-command trace rows. | SW-001 through SW-014 | Implemented | CLI tests |
-| ST-003 | Run target-board hardware-in-loop test after final hardware is available. | SW-002 through SW-010, SW-014 | Deferred | Human-approved deferred evidence |
+## Scope Rule
+
+System tests may only claim behavior they execute. Dev-mode tests prove PC harness behavior, contract shape, traceability, and explicit fallback/deferred statuses. They do not prove target-board I2C, BLE transport, DA14531 firmware execution, EN_Peripherals control, or push-button wake behavior.
+
+| ID | Test | Preconditions | Command / Procedure | Expected Result | Evidence Artifact | Requirements | Limits | Failure Action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ST-001 | Dev-mode self-test | Fresh checkout; package installed with `python -m pip install -e .[dev]`. | `python -m plantspeak.cli self-test --dev-mode > docs/test-evidence/ST-001.json` | Exit code 0; JSON has `external_i2c_uses_canned_data=true`, `button_wake_deferred=true`, `icd_capabilities_present=true`. | `docs/test-evidence/ST-001.json`; GitHub Actions `test` log | SW-001, SW-013, SW-014 | Does not prove real I2C, BLE, firmware, EN_Peripherals, or target-board push-button wake. | Create or update a GitHub issue linked to failed requirement and block promotion from S2. |
+| ST-002 | Requirement trace output | Fresh checkout; generated `plantspeak/data/issue_links.json` exists. | `python -m plantspeak.cli trace > docs/test-evidence/ST-002.txt` | Output contains one trace row for each software requirement with issue number, command, and verification method. | `docs/test-evidence/ST-002.txt`; CI captured stdout | SW-001, SW-002, SW-003, SW-004, SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-011, SW-012, SW-013, SW-014 as trace records only | Does not prove hardware execution; proves inspectable traceability only. | Create or update a GitHub issue for missing/incorrect trace row and block RTM closure. |
+| ST-003 | ICD capability summary | Fresh checkout; package installed. | `python -m plantspeak.cli capabilities > docs/test-evidence/ST-003.json` | Valid JSON object with 14 keys; SW-006/SW-013 statuses are `canned-data`; SW-014 is `dev-board-unavailable`; SW-001 command is `describe-icd`. | `docs/test-evidence/ST-003.json`; JSON validation in pytest | SW-001, SW-006, SW-013, SW-014 | Does not prove target command transport; proves local ICD contract shape. | Create or update a GitHub issue and block S4 BLE/ICD transport entry. |
+| ST-004 | Dev-mode measurement output | Fresh checkout; no external I2C devices required. | `python -m plantspeak.cli measure --dev-mode > docs/test-evidence/ST-004.json` | Exit code 0; JSON contains `photodiode_current_ua`, `ppfd_umol_m2_s`, `leaf_temperature_c`, `ambient_temperature_c`, `relative_humidity_percent`, `acceleration_g`, and `source=canned-dev-mode-data`. | `docs/test-evidence/ST-004.json`; CLI test log | SW-006, SW-008, SW-009, SW-010, SW-013 | Does not prove ADS1115, LP5816/PCA9846, MLX90632, HDC2010, or MXC4005XC hardware reads. | Create or update a GitHub issue and block S3 hardware adapter promotion. |
+| ST-005 | Fresh checkout CI system gate | GitHub PR branch pushed; CI workflow present. | GitHub Actions workflow `CI` job `test` runs `python -m pip install -e .[dev]` and `python -m pytest`. | Workflow conclusion is success for the PR head SHA. | GitHub Actions run URL in PR checks; `docs/reviews/test-report.md` | SW-001, SW-002, SW-003, SW-004, SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-011, SW-012, SW-013, SW-014 as implemented dev-mode test scope | Does not prove manual user acceptance or target-board evidence. | Keep PR unmerged and create/update issue for failing test or environment defect. |
+| ST-006 | Target-board HIL qualification | Target board, DA14531 firmware, BLE transport, and external peripherals available. | Run HIL procedure from S6 qualification plan. | LEDs, EN_Peripherals, I2C devices, measurement sequence, and push-button wake pass requirement-specific checks. | `docs/test-evidence/ST-006-hil-report.md` | SW-002, SW-003, SW-004, SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-014 | Deferred until target hardware and firmware transport exist. | Create or update hardware qualification issues and keep final release blocked. |
+
+## Promotion Criteria
+
+- S2 may proceed when ST-001, ST-002, ST-003, ST-004, and ST-005 pass on the PR branch.
+- S3 may proceed only after ST-004 evidence is stable and hardware adapter contracts are reviewed.
+- S4 may proceed only after ST-003 contract evidence is stable.
+- S6 cannot be claimed complete until ST-006 has real hardware-in-loop evidence.
+
+## Defect Rule
+
+Any failed system test must create or update a GitHub issue linked to the affected requirement, attach the failing evidence artifact or CI URL, and block the next stage gate until resolved or explicitly deferred by the Software Lead and human approver.
 """
 
 
