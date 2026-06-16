@@ -124,3 +124,6 @@ def test_write_artifact_quality_gates_reports_system_test_plan_status(tmp_path: 
     assert "docs/reviews/artifact-quality-gates.md" in normalized
     payload = json.loads((tmp_path / "docs" / "reviews" / "artifact-quality-gates.json").read_text(encoding="utf-8"))
     assert payload["passed"] is True
+    checks = {check["check"]: check["passed"] for check in payload["checks"]}
+    assert checks["firmware-architecture-specificity"] is True
+    assert any(check["check"] == "detailed-design-input-content" for check in payload["checks"])

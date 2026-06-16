@@ -3,12 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from vmodel_engine.artifact_quality import (
+    detailed_design_inputs_pass,
+    evaluate_detailed_design_inputs,
     evaluate_implementation_plan,
     evaluate_system_test_plan,
     implementation_plan_passes,
     system_test_plan_passes,
 )
-from vmodel_engine.autopilot import _plantspeak_system_test_plan, _staged_development_test_plan
+from vmodel_engine.autopilot import _firmware_architecture, _plantspeak_system_test_plan, _staged_development_test_plan
 
 
 def test_system_test_plan_quality_rejects_vague_plan(tmp_path: Path) -> None:
@@ -69,3 +71,29 @@ def test_generated_implementation_plan_passes_quality_gate(tmp_path: Path) -> No
 
     assert implementation_plan_passes(plan)
     assert all(issue.passed for issue in issues)
+
+
+def test_firmware_architecture_contains_required_design_inputs() -> None:
+    content = _firmware_architecture()
+
+    for term in [
+        "Firmware Layers",
+        "Module Map",
+        "Firmware Interfaces",
+        "Detailed Design Inputs",
+        "icd_dispatch",
+        "measurement_service",
+        "hal_i2c",
+        "ble_transport",
+        "ads1115_driver",
+        "P0_8",
+        "S6",
+    ]:
+        assert term in content
+
+
+def test_detailed_design_input_gate_rejects_missing_package(tmp_path: Path) -> None:
+    issues = evaluate_detailed_design_inputs(tmp_path)
+
+    assert not detailed_design_inputs_pass(tmp_path)
+    assert any(issue.check == "detailed-design-input-present" and not issue.passed for issue in issues)

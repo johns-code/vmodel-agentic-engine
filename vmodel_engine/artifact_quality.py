@@ -41,6 +41,47 @@ IMPLEMENTATION_PLAN_COLUMNS = [
     "Definition Of Done",
 ]
 
+DETAILED_DESIGN_INPUTS = {
+    "docs/vmodel/01-user-needs.md": ["Success Condition", "Dev-mode", "target"],
+    "docs/vmodel/02-system-requirements.md": ["Priority", "Acceptance Criteria", "must"],
+    "docs/vmodel/03-software-requirements.md": ["Observable Behavior", "Verification Test", "SW-014"],
+    "docs/vmodel/04-architecture-design.md": ["Interface Contracts", "Firmware command table", "BLE transport"],
+    "docs/vmodel/05-detailed-design-notes.md": ["Data Contracts", "Error And Deferred Behavior", "Dev-Mode Value"],
+    "docs/vmodel/06-implementation-task-plan.md": ["Task Policy", "Exit Gate", "TASK-014"],
+    "docs/vmodel/07-test-strategy.md": ["target-board evidence", "GitHub Actions", "acceptance validation"],
+    "docs/vmodel/08-unit-test-plan.md": ["Test ID", "Unit Under Test", "UT-014"],
+    "docs/vmodel/09-integration-test-plan.md": ["Integration", "IT-001", "IT-003"],
+    "docs/vmodel/10-system-test-plan.md": ["Preconditions", "Expected Result", "Failure Action"],
+    "docs/vmodel/11-acceptance-test-plan.md": ["Acceptance Condition", "Pending human approval", "AT-004"],
+    "docs/vmodel/12-requirements-traceability-matrix.md": ["Requirement", "Code", "Tests"],
+    "docs/planning/software-lead-execution-plan.md": ["Immediate Lead Actions", "Exit Criteria", "Software Lead"],
+    "docs/planning/issue-sequencing-plan.md": ["Dependency", "Exit Gate", "S3 hardware"],
+    "docs/planning/risk-register.md": ["Risk", "Mitigation", "Open"],
+    "docs/planning/staged-development-test-plan.md": ["PR / Branch", "Files / Modules", "Definition Of Done"],
+    "docs/firmware/architecture.md": ["Firmware Layers", "Module Map", "Firmware Interfaces", "Detailed Design Inputs"],
+}
+
+FIRMWARE_ARCHITECTURE_REQUIRED_TERMS = [
+    "icd_dispatch",
+    "measurement_service",
+    "hal_i2c",
+    "ble_transport",
+    "ads1115_driver",
+    "pca9846_driver",
+    "lp5816_driver",
+    "mlx90632_driver",
+    "hdc2010_driver",
+    "mxc4005_driver",
+    "P0_5",
+    "P0_11",
+    "P0_10",
+    "P0_6",
+    "P0_8",
+    "P0_9",
+    "S5",
+    "S6",
+]
+
 
 FORBIDDEN_SYSTEM_TEST_PHRASES = [
     "SW-001 through SW-014",
@@ -271,6 +312,54 @@ def evaluate_implementation_plan(path: Path) -> list[ArtifactQualityIssue]:
 
 def implementation_plan_passes(path: Path) -> bool:
     return all(issue.passed for issue in evaluate_implementation_plan(path))
+
+
+def evaluate_detailed_design_inputs(repo_dir: Path) -> list[ArtifactQualityIssue]:
+    issues: list[ArtifactQualityIssue] = []
+    for relative, required_terms in DETAILED_DESIGN_INPUTS.items():
+        path = repo_dir / relative
+        if not path.exists():
+            issues.append(
+                ArtifactQualityIssue(
+                    artifact=relative,
+                    check="detailed-design-input-present",
+                    passed=False,
+                    message=f"Missing required detailed-design input artifact: {relative}",
+                )
+            )
+            continue
+        content = path.read_text(encoding="utf-8")
+        missing_terms = [term for term in required_terms if term not in content]
+        issues.append(
+            ArtifactQualityIssue(
+                artifact=relative,
+                check="detailed-design-input-content",
+                passed=not missing_terms,
+                message="Artifact contains required detailed-design input markers."
+                if not missing_terms
+                else f"Missing detailed-design markers: {', '.join(missing_terms)}",
+            )
+        )
+
+    firmware_path = repo_dir / "docs" / "firmware" / "architecture.md"
+    if firmware_path.exists():
+        firmware_content = firmware_path.read_text(encoding="utf-8")
+        missing_firmware_terms = [term for term in FIRMWARE_ARCHITECTURE_REQUIRED_TERMS if term not in firmware_content]
+        issues.append(
+            ArtifactQualityIssue(
+                artifact=str(firmware_path),
+                check="firmware-architecture-specificity",
+                passed=not missing_firmware_terms,
+                message="Firmware architecture names required modules, pins, drivers, and stages."
+                if not missing_firmware_terms
+                else f"Missing firmware architecture terms: {', '.join(missing_firmware_terms)}",
+            )
+        )
+    return issues
+
+
+def detailed_design_inputs_pass(repo_dir: Path) -> bool:
+    return all(issue.passed for issue in evaluate_detailed_design_inputs(repo_dir))
 
 
 def _first_table_header(content: str) -> list[str]:
