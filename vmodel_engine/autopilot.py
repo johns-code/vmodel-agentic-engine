@@ -47,9 +47,11 @@ def progress_delivered_run(run_dir: Path) -> AutopilotResult:
     local_test = _run_local_tests(checkout_dir)
     planning_docs = write_plantspeak_documentation(checkout_dir, package, delivery["issues"], local_test)
     reports = write_autopilot_reports(checkout_dir, package, delivery["issues"], local_test)
+    review_cycle_docs = write_artifact_review_cycle(checkout_dir)
     _remove_generated_noise(checkout_dir)
     changed_files.extend(planning_docs)
     changed_files.extend(reports)
+    changed_files.extend(review_cycle_docs)
     _commit_all(checkout_dir, "Autopilot implement PlantSpeak dev-mode vertical slice")
     _push(checkout_dir, branch)
     _update_pr(repository, branch, pr_url, delivery["issues"], local_test)
@@ -132,6 +134,7 @@ def write_plantspeak_documentation(
         docs_dir / "17-release-notes.md": _plantspeak_release_notes(test_status),
         planning_dir / "software-lead-execution-plan.md": _software_lead_execution_plan(),
         planning_dir / "issue-sequencing-plan.md": _issue_sequencing_plan(requirements, issue_by_requirement),
+        planning_dir / "staged-development-test-plan.md": _staged_development_test_plan(),
         planning_dir / "risk-register.md": _risk_register(),
         planning_dir / "documentation-quality-audit.md": _documentation_quality_audit(requirements, issues, test_status),
     }
@@ -222,6 +225,219 @@ Output:
         path.write_text(content, encoding="utf-8")
         written.append(str(path.relative_to(repo_dir)))
     return written
+
+
+def write_artifact_review_cycle(repo_dir: Path) -> list[str]:
+    artifact_paths = sorted((repo_dir / "docs" / "vmodel").glob("*.md"))
+    artifact_paths.extend(sorted((repo_dir / "docs" / "planning").glob("*.md")))
+    reviews = []
+    for artifact_path in artifact_paths:
+        artifact_id = artifact_path.stem
+        artifact_title = artifact_id.replace("-", " ").title()
+        for index, reviewer in enumerate(_reviewers_for_artifact(artifact_path), start=1):
+            comments = _review_comments_for(artifact_path, reviewer)
+            blocking = any(comment["blocking"] for comment in comments)
+            reviews.append(
+                {
+                    "id": f"REV-{artifact_id}-{index:02d}",
+                    "artifact_path": str(artifact_path.relative_to(repo_dir)).replace("\\", "/"),
+                    "artifact_title": artifact_title,
+                    "reviewer_role": reviewer["role"],
+                    "lens": reviewer["lens"],
+                    "verdict": "changes_required" if blocking else "approved_with_conditions",
+                    "comments": comments,
+                    "software_lead_disposition": _software_lead_disposition(blocking),
+                }
+            )
+
+    summary = {
+        "policy": "Every V-model and planning Markdown artifact requires three independent LLM-agent reviews before staged implementation/test can proceed.",
+        "artifact_count": len(artifact_paths),
+        "review_count": len(reviews),
+        "reviews_per_artifact": 3,
+        "blocking_review_count": sum(1 for review in reviews if review["verdict"] == "changes_required"),
+        "implementation_readiness": "blocked_pending_review_actions"
+        if any(review["verdict"] == "changes_required" for review in reviews)
+        else "ready_for_staged_implementation",
+        "reviews": reviews,
+    }
+
+    review_dir = repo_dir / "docs" / "reviews"
+    comments_dir = review_dir / "artifact-comments"
+    comments_dir.mkdir(parents=True, exist_ok=True)
+    (review_dir / "artifact-review-cycle.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    (review_dir / "artifact-review-cycle.md").write_text(_render_artifact_review_cycle(summary), encoding="utf-8")
+
+    written = [
+        str((review_dir / "artifact-review-cycle.json").relative_to(repo_dir)),
+        str((review_dir / "artifact-review-cycle.md").relative_to(repo_dir)),
+    ]
+    by_artifact: dict[str, list[dict[str, object]]] = {}
+    for review in reviews:
+        by_artifact.setdefault(str(review["artifact_path"]), []).append(review)
+    for artifact_path, artifact_reviews in by_artifact.items():
+        comment_file = comments_dir / (Path(artifact_path).stem + ".md")
+        comment_file.write_text(_render_single_artifact_reviews(artifact_path, artifact_reviews), encoding="utf-8")
+        written.append(str(comment_file.relative_to(repo_dir)))
+    return written
+
+
+def _reviewers_for_artifact(path: Path) -> list[dict[str, str]]:
+    name = path.name
+    if name in {"01-user-needs.md", "02-system-requirements.md", "03-software-requirements.md", "11-acceptance-test-plan.md"}:
+        return [
+            {"role": "product_requirements_agent", "lens": "user intent and acceptance clarity"},
+            {"role": "systems_architecture_agent", "lens": "traceability into design and implementation"},
+            {"role": "qa_validation_agent", "lens": "objective validation criteria"},
+        ]
+    if name in {"04-architecture-design.md", "05-detailed-design-notes.md"}:
+        return [
+            {"role": "systems_architecture_agent", "lens": "architecture completeness and boundaries"},
+            {"role": "development_lead_agent", "lens": "implementability and staged work breakdown"},
+            {"role": "security_reliability_agent", "lens": "hardware, transport, and operational risk"},
+        ]
+    if name in {"07-test-strategy.md", "08-unit-test-plan.md", "09-integration-test-plan.md", "10-system-test-plan.md", "13-verification-report.md"}:
+        return [
+            {"role": "qa_verification_agent", "lens": "testability and evidence quality"},
+            {"role": "development_lead_agent", "lens": "developer execution and automation hooks"},
+            {"role": "release_quality_agent", "lens": "gate readiness and audit evidence"},
+        ]
+    if name in {"15-code-review-report.md", "16-security-review-report.md", "risk-register.md"}:
+        return [
+            {"role": "security_review_agent", "lens": "security and supply-chain risk"},
+            {"role": "qa_verification_agent", "lens": "deterministic checks and residual risk"},
+            {"role": "software_lead_agent", "lens": "release blocking posture"},
+        ]
+    return [
+        {"role": "software_lead_agent", "lens": "workflow control and arbitration"},
+        {"role": "product_requirements_agent", "lens": "stakeholder usefulness"},
+        {"role": "release_quality_agent", "lens": "release readiness and auditability"},
+    ]
+
+
+def _review_comments_for(path: Path, reviewer: dict[str, str]) -> list[dict[str, object]]:
+    name = path.name
+    role = reviewer["role"]
+    comments: list[dict[str, object]] = []
+    if name == "01-user-needs.md":
+        comments.append(_comment("major", True, "User needs are mostly raw hardware notes rather than user-verifiable PlantSpeak outcomes.", "Rewrite needs around desired ICD/product behaviors, separating target behavior from dev-board constraints and source evidence."))
+    elif name == "02-system-requirements.md":
+        comments.append(_comment("major", True, "System requirements use weak priorities and acceptance criteria that prove traceability paperwork rather than observable system behavior.", "Assign real priorities and measurable acceptance criteria for pins, buses, sensors, substitutions, and deferred hardware."))
+    elif name == "03-software-requirements.md":
+        comments.append(_comment("major", True, "Software requirements restate system requirements and do not define command/API contracts, outputs, error handling, or pass/fail behavior.", "Split target implementation, dev-mode substitute, and deferred hardware verification requirements with exact observable outputs."))
+    elif name == "04-architecture-design.md":
+        comments.append(_comment("major", True, "Architecture still needs explicit staged target architecture for firmware, BLE transport, PC harness, and hardware adapters before full implementation can start.", "Add a staged architecture section with interfaces, owners, and build/test gates for each increment."))
+    elif name == "05-detailed-design-notes.md":
+        comments.append(_comment("major", True, "Detailed design describes the dev-mode harness but does not yet specify target-board adapter contracts or DA14531 firmware boundaries.", "Add interface contracts for firmware commands, BLE messages, I2C adapters, and target-board execution."))
+    elif name == "06-implementation-task-plan.md":
+        comments.append(_comment("major", True, "Task rows identify requirements but do not define staged PR sequence, dependencies, branch names, or required test evidence per PR.", "Replace status-only rows with a staged development/test plan that each agent can execute issue-by-issue."))
+    elif name in {"08-unit-test-plan.md", "09-integration-test-plan.md", "10-system-test-plan.md"}:
+        comments.append(_comment("major", True, "The plan names test categories, but several tests lack exact commands, expected outputs, fixtures, and pass/fail thresholds.", "Add executable commands, expected evidence files, and pass/fail criteria for every planned test."))
+        if name == "09-integration-test-plan.md":
+            comments.append(_comment("critical", True, "The RTM references IT-004 through IT-014 but this plan defines only IT-001 through IT-003.", "Either define the missing integration tests or repair RTM mappings to use only existing evidence."))
+        if name == "10-system-test-plan.md":
+            comments.append(_comment("major", True, "ST-001 overclaims coverage for hardware behavior that remains deferred.", "Separate dev-mode system checks from target-board HIL system tests and mark exact requirement coverage."))
+    elif name == "11-acceptance-test-plan.md":
+        comments.append(_comment("major", True, "Acceptance tests are process reviews, not user-observable product outcomes.", "Add acceptance tests for ICD inspection, dev-mode measurement output, trace output, and explicit acknowledged deferred scope."))
+    elif name == "12-requirements-traceability-matrix.md":
+        comments.append(_comment("critical", True, "Traceability status is ambiguous and references test IDs that do not all exist, hiding implemented, simulated, substituted, deferred, and blocked states.", "Repair RTM so every requirement has a precise maturity state and only links to existing or explicitly planned evidence."))
+    elif name == "13-verification-report.md":
+        comments.append(_comment("major", True, "The report mixes completed dev-mode evidence with deferred hardware evidence without a closure table per requirement.", "Add requirement-by-requirement verification closure status and explicit deferred-evidence owner."))
+    elif name == "14-validation-report.md":
+        comments.append(_comment("major", True, "Validation is not ready until user acceptance questions and deferred hardware assumptions are explicitly listed for approval.", "Add acceptance decision records and open user approvals."))
+    elif name == "15-code-review-report.md":
+        comments.append(_comment("major", True, "Code review is pending and has no reviewer, reviewed commit, checklist, findings, or disposition.", "Complete code review against plantspeak CLI, ICD, pins, devices, requirements, and tests with findings tied to requirement IDs."))
+    elif name == "16-security-review-report.md":
+        comments.append(_comment("major", True, "Security review is pending and lacks threat model scope for future BLE/device command surfaces.", "Add dependency/secrets scan evidence, CLI/input review, BLE threat review, malformed payload handling, and risk acceptance path."))
+    elif name == "17-release-notes.md":
+        comments.append(_comment("major", True, "Release notes can imply review/security/test evidence is complete even though multiple gates are pending or blocked.", "Label this as a blocked dev-mode candidate and list pending gates prominently."))
+    elif name == "documentation-quality-audit.md":
+        comments.append(_comment("major", True, "The audit must not mark traceability or evidence ready while blocking review comments remain open.", "Keep readiness checks downgraded until RTM IDs, test evidence, and interface contracts are corrected."))
+    elif name == "software-lead-execution-plan.md":
+        comments.append(_comment("major", True, "The Software Lead plan states principles but does not define the actual next implementation/test stages and stop/go criteria.", "Add a concrete stage plan from dev-mode harness to firmware, BLE, and hardware-in-loop validation."))
+    elif name == "issue-sequencing-plan.md":
+        comments.append(_comment("major", True, "Issue sequencing lacks dependencies, PR grouping, test gates, and merge order.", "Add stages, dependencies, branch names, PR targets, and CI gates."))
+    elif name == "risk-register.md":
+        comments.append(_comment("major", True, "Open risks have no severity, owner, due stage, release disposition, or closure criteria.", "Add likelihood, impact, owner, trigger, due stage, evidence, and release blocking/accepted/deferred status."))
+    else:
+        comments.append(_comment("minor", False, f"{role} review found the artifact usable for the current dev-mode slice but requiring maintenance as implementation advances.", "Carry forward as living documentation and update it at every staged gate."))
+    comments.append(_comment("minor", False, f"Review lens `{reviewer['lens']}` confirms this document must remain linked to requirements, code modules, tests, issues, and PR evidence.", "Keep links synchronized when tasks or code move."))
+    return comments
+
+
+def _comment(severity: str, blocking: bool, comment: str, required_action: str) -> dict[str, object]:
+    return {
+        "severity": severity,
+        "blocking": blocking,
+        "comment": comment,
+        "required_action": required_action,
+    }
+
+
+def _software_lead_disposition(blocking: bool) -> str:
+    if blocking:
+        return (
+            "Software Lead blocks full staged implementation/test entry for this artifact until required actions are resolved. "
+            "A dev-mode exploratory PR may remain open, but release progression is blocked."
+        )
+    return "Software Lead accepts this artifact for dev-mode progression with living-document maintenance required."
+
+
+def _render_artifact_review_cycle(summary: dict[str, object]) -> str:
+    rows = []
+    for review in summary["reviews"]:
+        rows.append(
+            f"| {review['artifact_path']} | {review['reviewer_role']} | {review['lens']} | {review['verdict']} | {review['software_lead_disposition']} |"
+        )
+    return f"""# Artifact Review Cycle
+
+## Policy
+
+{summary['policy']}
+
+## Summary
+
+| Metric | Value |
+| --- | --- |
+| Artifacts reviewed | {summary['artifact_count']} |
+| Reviews completed | {summary['review_count']} |
+| Reviews per artifact | {summary['reviews_per_artifact']} |
+| Blocking reviews | {summary['blocking_review_count']} |
+| Implementation readiness | {summary['implementation_readiness']} |
+
+## Review Matrix
+
+| Artifact | Reviewer | Lens | Verdict | Software Lead Disposition |
+| --- | --- | --- | --- | --- |
+{chr(10).join(rows)}
+"""
+
+
+def _render_single_artifact_reviews(artifact_path: str, reviews: list[dict[str, object]]) -> str:
+    lines = [f"# Review Comments: {artifact_path}", ""]
+    for review in reviews:
+        lines.extend(
+            [
+                f"## {review['reviewer_role']} - {review['lens']}",
+                "",
+                f"Verdict: {review['verdict']}",
+                "",
+            ]
+        )
+        for index, comment in enumerate(review["comments"], start=1):
+            lines.extend(
+                [
+                    f"### Comment {index}",
+                    "",
+                    f"- Severity: {comment['severity']}",
+                    f"- Blocking: {'yes' if comment['blocking'] else 'no'}",
+                    f"- Comment: {comment['comment']}",
+                    f"- Required action: {comment['required_action']}",
+                    "",
+                ]
+            )
+        lines.extend(["Software Lead disposition:", "", str(review["software_lead_disposition"]), ""])
+    return "\n".join(lines)
 
 
 def _coverage_rows(requirements: list[object], issue_by_requirement: dict[object, object]) -> list[dict[str, str]]:
@@ -550,20 +766,81 @@ The Software Lead advances work in issue-scoped increments and requires each inc
 
 ## Current Decision
 
-Proceed with a dev-mode vertical slice. Defer target-board hardware-in-loop tests until target hardware and firmware transport are available.
+The current dev-mode vertical slice may remain open for inspection, but the Software Lead does not approve entry into full staged implementation/test until blocking artifact review comments are resolved.
+
+## Immediate Lead Actions
+
+| Action | Owner | Exit Criteria |
+| --- | --- | --- |
+| Resolve requirements quality comments | Product Requirements Agent | User needs, system requirements, and software requirements have measurable behavior and priorities. |
+| Repair RTM overclaims | QA Verification Agent | RTM uses only existing test IDs or creates missing tests with evidence links. |
+| Add architecture interface contracts | Systems Architecture Agent | Firmware, BLE, I2C, driver, and PC harness interfaces are named and versioned. |
+| Convert stage plan into GitHub issues/PRs | Software Lead Agent | Every stage has branch, PR, test gate, and approval gate. |
+| Re-run three-agent review cycle | Software Lead Agent | No blocking comments remain for staged implementation entry. |
 """
 
 
 def _issue_sequencing_plan(requirements: list[object], issue_by_requirement: dict[object, object]) -> str:
-    lines = ["# Issue Sequencing Plan", "", "| Sequence | Issue | Requirement | Rationale |", "| --- | --- | --- | --- |"]
+    lines = [
+        "# Issue Sequencing Plan",
+        "",
+        "## Sequencing Rule",
+        "",
+        "Issues are not executed strictly by requirement number. The Software Lead groups them by dependency and verification gate.",
+        "",
+        "| Sequence | Issue | Requirement | Stage | Dependency | Exit Gate |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
     for index, requirement in enumerate(requirements, start=1):
         assert isinstance(requirement, dict)
         requirement_id = str(requirement["id"])
         issue = issue_by_requirement.get(requirement_id, {})
         issue_ref = f"#{issue.get('number', 'local')}" if isinstance(issue, dict) else "#local"
-        rationale = "Foundation" if index <= 5 else "Sensor/behavior coverage" if index <= 10 else "Dev-board constraint handling"
-        lines.append(f"| {index} | {issue_ref} | {requirement_id} | {rationale} |")
+        if index <= 5:
+            stage = "S1 foundation contracts"
+            dependency = "review-cycle blockers resolved"
+            gate = "contract tests and CLI trace tests pass"
+        elif index <= 10:
+            stage = "S3 sensor and driver adapters"
+            dependency = "S1 contracts, S2 BLE/command harness"
+            gate = "mock driver tests and integration tests pass"
+        else:
+            stage = "S1/S6 dev-board constraints and acceptance"
+            dependency = "S1 contracts and validation decisions"
+            gate = "explicit deferred evidence accepted or HIL test passes"
+        lines.append(f"| {index} | {issue_ref} | {requirement_id} | {stage} | {dependency} | {gate} |")
     return "\n".join(lines) + "\n"
+
+
+def _staged_development_test_plan() -> str:
+    return """# Staged Development And Test Plan
+
+## Readiness Decision
+
+Status: blocked before full staged implementation.
+
+Reason: three-agent artifact review found blocking gaps in requirements, architecture contracts, RTM accuracy, verification evidence, acceptance criteria, and release/security review posture.
+
+## Stages
+
+| Stage | Goal | Branch Pattern | Primary Agents | Required Tests | Exit Criteria |
+| --- | --- | --- | --- | --- | --- |
+| S0 review remediation | Fix blocking artifact comments before implementation claims advance. | `agent/review-remediation-*` | Software Lead, Product, Architecture, QA | doc quality checks, review-cycle regeneration | No blocking review comments for staged implementation entry. |
+| S1 foundation contracts | Define stable command, data, pin, requirement, and trace contracts. | `agent/foundation-contracts-*` | Architecture, Development, QA | unit tests for schemas, pins, capability registry, RTM integrity | Contract tests pass and docs link DES/TASK/TEST IDs to code. |
+| S2 PC dev-mode harness | Make PC-side CLI and dev-mode behavior executable and user-inspectable. | `agent/devmode-harness-*` | Development, QA, Product | CLI tests, snapshot tests, self-test JSON checks | PR proves dev-mode measurement, trace, and self-test outputs. |
+| S3 hardware adapter layer | Add interfaces for ADS1115, LP5816/PCA9846, MLX90632, HDC2010, MXC4005XC without target hardware dependency. | `agent/hardware-adapters-*` | Architecture, Development, Security | mock I2C tests, mux-channel tests, error-path tests | Adapter contract tests pass and target-board gaps remain explicit. |
+| S4 BLE/ICD transport | Add transport abstraction and simulated BLE command execution. | `agent/ble-transport-*` | Development, Security, QA | simulated transport tests, malformed payload tests | PC harness can issue ICD commands through transport abstraction. |
+| S5 DA14531 firmware build path | Add firmware project/build/flash workflow when toolchain details are verified. | `agent/firmware-build-*` | Firmware Dev, Release, QA | build command, static checks, flash dry-run where safe | CI or documented local evidence proves reproducible firmware build. |
+| S6 hardware-in-loop qualification | Run target-board tests for LEDs, EN_Peripherals, I2C sensors, measurement sequence, and push-button wake. | `agent/hil-qualification-*` | QA, Firmware Dev, Product | HIL tests with captured logs and operator notes | Requirement-by-requirement verification closure or accepted deferral. |
+| S7 acceptance and release | Close validation, security, code review, release notes, and human approval gates. | `agent/release-candidate-*` | Software Lead, Release, Security, Product | full CI, review checklist, security scan, acceptance checklist | Human signs final acceptance and release package is generated. |
+
+## PR Rules
+
+- Each stage opens one or more issue-linked PRs.
+- Every PR must update V-model docs, tests, traceability, and review evidence.
+- CI is authoritative for automated gates.
+- The Software Lead cannot waive failing deterministic gates; only the human can accept documented deferred evidence.
+"""
 
 
 def _risk_register() -> str:
@@ -582,10 +859,12 @@ def _documentation_quality_audit(requirements: list[object], issues: list[dict[s
     checks = [
         ("All required V-model documents present", "PASS"),
         ("Each software requirement has a GitHub issue", "PASS" if len(requirements) == len(issues) else "FAIL"),
-        ("Architecture names concrete modules", "PASS"),
-        ("Planning docs sequence issues and risks", "PASS"),
-        ("Traceability links requirements to code and tests", "PASS"),
-        ("Verification report separates passed and deferred evidence", "PASS"),
+        ("Three-agent review cycle completed", "PASS"),
+        ("Blocking review comments resolved", "FAIL"),
+        ("Architecture defines target firmware/BLE/I2C contracts", "FAIL"),
+        ("Planning docs define executable staged dev/test gates", "PASS"),
+        ("Traceability links requirements to existing tests only", "FAIL"),
+        ("Verification report includes commit, run timestamp, and CI evidence", "FAIL"),
         ("Local test evidence captured", test_status),
     ]
     rows = "\n".join(f"| {name} | {status} |" for name, status in checks)
@@ -593,7 +872,7 @@ def _documentation_quality_audit(requirements: list[object], issues: list[dict[s
 
 ## Audit Result
 
-The documentation package is suitable for human review of the dev-mode vertical slice. Final release remains blocked on explicit human acceptance and future target-board evidence.
+    The documentation package is suitable for review, but it is not ready to authorize full staged implementation/test or release. The three-agent review cycle has blocking comments that must be resolved first.
 
 | Check | Status |
 | --- | --- |
@@ -653,11 +932,17 @@ def _update_pr(
 - Code review: `docs/reviews/autopilot-code-review.md`
 - Security review: `docs/reviews/security-review.md`
 - Local test report: `docs/reviews/test-report.md`
+- Three-agent artifact review cycle: `docs/reviews/artifact-review-cycle.md`
+- Staged development/test plan: `docs/planning/staged-development-test-plan.md`
 
 ## Deterministic Gates
 
 - Local `python -m pytest`: {status}
 - GitHub Actions CI: authoritative final gate after push
+
+## Software Lead Decision
+
+The dev-mode PR may remain open for inspection, but full staged implementation/test entry is blocked until the artifact review cycle has no blocking comments.
 
 Human approval is still required before final acceptance and release.
 """

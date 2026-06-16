@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import json
 import subprocess
 
-from vmodel_engine.autopilot import write_plantspeak_documentation, write_plantspeak_vertical_slice
+from vmodel_engine.autopilot import write_artifact_review_cycle, write_plantspeak_documentation, write_plantspeak_vertical_slice
 
 
 def test_write_plantspeak_vertical_slice_creates_domain_code(tmp_path: Path) -> None:
@@ -74,5 +75,28 @@ def test_write_plantspeak_documentation_creates_quality_audit(tmp_path: Path) ->
     assert "docs/planning/software-lead-execution-plan.md" in normalized
     assert "docs/planning/documentation-quality-audit.md" in normalized
     audit = (tmp_path / "docs" / "planning" / "documentation-quality-audit.md").read_text(encoding="utf-8")
-    assert "Traceability links requirements to code and tests" in audit
+    assert "Traceability links requirements to existing tests only" in audit
+    assert "| Blocking review comments resolved | FAIL |" in audit
     assert "| Local test evidence captured | PASS |" in audit
+    assert (tmp_path / "docs" / "planning" / "staged-development-test-plan.md").exists()
+
+
+def test_write_artifact_review_cycle_requires_three_reviews_per_doc(tmp_path: Path) -> None:
+    vmodel_dir = tmp_path / "docs" / "vmodel"
+    planning_dir = tmp_path / "docs" / "planning"
+    vmodel_dir.mkdir(parents=True)
+    planning_dir.mkdir(parents=True)
+    for name in ["04-architecture-design.md", "06-implementation-task-plan.md"]:
+        (vmodel_dir / name).write_text(f"# {name}\n", encoding="utf-8")
+    (planning_dir / "software-lead-execution-plan.md").write_text("# lead\n", encoding="utf-8")
+
+    written = write_artifact_review_cycle(tmp_path)
+    normalized = {path.replace("\\", "/") for path in written}
+
+    assert "docs/reviews/artifact-review-cycle.md" in normalized
+    assert "docs/reviews/artifact-comments/04-architecture-design.md" in normalized
+    summary = json.loads((tmp_path / "docs" / "reviews" / "artifact-review-cycle.json").read_text(encoding="utf-8"))
+    assert summary["artifact_count"] == 3
+    assert summary["review_count"] == 9
+    assert summary["reviews_per_artifact"] == 3
+    assert summary["implementation_readiness"] == "blocked_pending_review_actions"
