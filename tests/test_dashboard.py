@@ -3,6 +3,7 @@ from pathlib import Path
 from vmodel_engine.dashboard import collect_dashboard_state
 from vmodel_engine.engine import build_project
 from vmodel_engine.questions import answer_question, create_question
+from vmodel_engine.lead_answers import answer_lead_question
 
 
 def test_dashboard_state_includes_vmodel_and_questions(tmp_path: Path) -> None:
@@ -19,3 +20,17 @@ def test_dashboard_state_includes_vmodel_and_questions(tmp_path: Path) -> None:
     assert len(state["vmodel"]) >= 10
     assert state["questions"][0]["status"] == "answered"
     assert state["questions"][0]["required"] is True
+
+
+def test_lead_answers_architecture_review_question(tmp_path: Path) -> None:
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("- Users must record observations.\n", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    build_project(requirements, run_dir, "PlantSpeak")
+
+    answer = answer_lead_question(run_dir, "show me the review comments for the architecture design")
+
+    assert "Architecture/design review comments" in answer
+    assert "product_requirements" in answer
+    assert "systems_architecture" in answer
+    assert "security_review" in answer

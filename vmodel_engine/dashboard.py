@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from vmodel_engine.questions import answer_question, create_question, load_questions
+from vmodel_engine.lead_answers import answer_lead_question
 
 
 VMODEL_STAGES = [
@@ -77,15 +78,19 @@ def serve_dashboard(run_dir: Path, host: str = "127.0.0.1", port: int = 8765) ->
             parsed = urlparse(self.path)
             payload = self._read_json_body()
             if parsed.path == "/api/questions":
+                asked_by = str(payload.get("asked_by", "user")).strip() or "user"
+                is_user_question = asked_by == "user"
                 item = create_question(
                     run_dir,
                     str(payload.get("question", "")).strip(),
                     str(payload.get("context", "")).strip(),
-                    str(payload.get("asked_by", "software_lead")).strip() or "software_lead",
-                    bool(payload.get("required", True)),
-                    str(payload.get("phase", "preflight")).strip() or "preflight",
-                    str(payload.get("topic", "general")).strip() or "general",
+                    asked_by,
+                    False if is_user_question else bool(payload.get("required", True)),
+                    "user-question" if is_user_question else str(payload.get("phase", "preflight")).strip() or "preflight",
+                    "lead-response" if is_user_question else str(payload.get("topic", "general")).strip() or "general",
                 )
+                if is_user_question and item.status != "answered":
+                    item = answer_question(run_dir, item.id, answer_lead_question(run_dir, item.question))
                 self._send_json(asdict(item), status=HTTPStatus.CREATED)
                 return
             if parsed.path.startswith("/api/questions/") and parsed.path.endswith("/answer"):
@@ -247,10 +252,10 @@ _INDEX_HTML = r"""<!doctype html>
       <h2>Clarifications</h2>
       <div class="grid">
         <div>
-          <h3>Ask The User</h3>
+          <h3>Ask Software Lead</h3>
           <form id="ask-form">
-            <input name="asked_by" value="software_lead" aria-label="Asked by">
-            <textarea name="question" rows="3" placeholder="Question for the user"></textarea>
+            <input name="asked_by" value="user" aria-label="Asked by">
+            <textarea name="question" rows="3" placeholder="Question for the Software Lead"></textarea>
             <textarea name="context" rows="2" placeholder="Context"></textarea>
             <button type="submit">Add Question</button>
           </form>
