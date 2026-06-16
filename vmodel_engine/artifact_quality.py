@@ -41,6 +41,29 @@ IMPLEMENTATION_PLAN_COLUMNS = [
     "Definition Of Done",
 ]
 
+UNIT_TEST_PLAN_COLUMNS = [
+    "Test ID",
+    "Requirement",
+    "Unit Under Test",
+    "Fixture / Input",
+    "Assertions",
+    "Negative / Edge Case",
+    "Evidence",
+    "Stage",
+]
+
+INTEGRATION_TEST_PLAN_COLUMNS = [
+    "Test ID",
+    "Requirements",
+    "Integration Boundary",
+    "Fixture / Setup",
+    "Procedure",
+    "Expected Observability",
+    "Negative / Fault Case",
+    "Evidence",
+    "Promotion Gate",
+]
+
 DETAILED_DESIGN_INPUTS = {
     "docs/vmodel/01-user-needs.md": ["Success Condition", "Dev-mode", "target"],
     "docs/vmodel/02-system-requirements.md": ["Priority", "Acceptance Criteria", "must"],
@@ -98,6 +121,12 @@ FORBIDDEN_IMPLEMENTATION_PLAN_PHRASES = [
     "agent/*",
     "agent/**",
     "Branch Pattern",
+]
+
+FORBIDDEN_DETAILED_TEST_PHRASES = [
+    "Implemented | `python -m pytest`",
+    "SW-006 through SW-010",
+    "SW-002 through SW-005",
 ]
 
 
@@ -304,6 +333,119 @@ def evaluate_implementation_plan(path: Path) -> list[ArtifactQualityIssue]:
 
 def implementation_plan_passes(path: Path) -> bool:
     return all(issue.passed for issue in evaluate_implementation_plan(path))
+
+
+def evaluate_detailed_test_design(repo_dir: Path) -> list[ArtifactQualityIssue]:
+    return [
+        *evaluate_unit_test_plan(repo_dir / "docs" / "vmodel" / "08-unit-test-plan.md"),
+        *evaluate_integration_test_plan(repo_dir / "docs" / "vmodel" / "09-integration-test-plan.md"),
+    ]
+
+
+def evaluate_unit_test_plan(path: Path) -> list[ArtifactQualityIssue]:
+    content = path.read_text(encoding="utf-8")
+    artifact = str(path)
+    issues: list[ArtifactQualityIssue] = []
+    header = _first_table_header(content)
+    missing_columns = [column for column in UNIT_TEST_PLAN_COLUMNS if column not in header]
+    issues.append(
+        ArtifactQualityIssue(
+            artifact=artifact,
+            check="unit-test-plan-required-columns",
+            passed=not missing_columns,
+            message="Unit test plan includes fixture, assertion, negative case, evidence, and stage columns."
+            if not missing_columns
+            else f"Missing unit test columns: {', '.join(missing_columns)}",
+        )
+    )
+    rows = [row for row in _table_rows(content) if row.startswith("| UT-")]
+    issues.append(
+        ArtifactQualityIssue(
+            artifact=artifact,
+            check="unit-test-plan-row-count",
+            passed=len(rows) >= 14,
+            message="Unit test plan defines one or more rows for each software requirement."
+            if len(rows) >= 14
+            else "Unit test plan must define at least fourteen requirement-linked tests.",
+        )
+    )
+    forbidden = [phrase for phrase in FORBIDDEN_DETAILED_TEST_PHRASES if phrase in content]
+    issues.append(
+        ArtifactQualityIssue(
+            artifact=artifact,
+            check="unit-test-plan-no-shallow-status-only-rows",
+            passed=not forbidden,
+            message="Unit test rows include detailed design intent instead of status-only evidence."
+            if not forbidden
+            else f"Shallow detailed-test phrases detected: {', '.join(forbidden)}",
+        )
+    )
+    required_terms = ["assert", "fault", "edge", "fixture", "source metadata"]
+    missing_terms = [term for term in required_terms if term not in content.lower()]
+    issues.append(
+        ArtifactQualityIssue(
+            artifact=artifact,
+            check="unit-test-plan-behavior-specificity",
+            passed=not missing_terms,
+            message="Unit test plan names assertions, fixtures, edge/fault cases, and source metadata."
+            if not missing_terms
+            else f"Missing behavior-specific unit test terms: {', '.join(missing_terms)}",
+        )
+    )
+    return issues
+
+
+def evaluate_integration_test_plan(path: Path) -> list[ArtifactQualityIssue]:
+    content = path.read_text(encoding="utf-8")
+    artifact = str(path)
+    issues: list[ArtifactQualityIssue] = []
+    header = _first_table_header(content)
+    missing_columns = [column for column in INTEGRATION_TEST_PLAN_COLUMNS if column not in header]
+    issues.append(
+        ArtifactQualityIssue(
+            artifact=artifact,
+            check="integration-test-plan-required-columns",
+            passed=not missing_columns,
+            message="Integration test plan includes setup, procedure, observability, negative case, evidence, and promotion gate columns."
+            if not missing_columns
+            else f"Missing integration test columns: {', '.join(missing_columns)}",
+        )
+    )
+    rows = [row for row in _table_rows(content) if row.startswith("| IT-")]
+    issues.append(
+        ArtifactQualityIssue(
+            artifact=artifact,
+            check="integration-test-plan-row-count",
+            passed=len(rows) >= 6,
+            message="Integration test plan defines staged boundaries beyond the S0 harness."
+            if len(rows) >= 6
+            else "Integration test plan must define at least six boundary tests across S1-S6.",
+        )
+    )
+    forbidden = [phrase for phrase in FORBIDDEN_DETAILED_TEST_PHRASES if phrase in content]
+    issues.append(
+        ArtifactQualityIssue(
+            artifact=artifact,
+            check="integration-test-plan-no-vague-coverage-ranges",
+            passed=not forbidden,
+            message="Integration test plan avoids vague requirement ranges and status-only rows."
+            if not forbidden
+            else f"Vague integration-test phrases detected: {', '.join(forbidden)}",
+        )
+    )
+    required_terms = ["malformed", "timeout", "missing", "promotion", "evidence"]
+    missing_terms = [term for term in required_terms if term not in content.lower()]
+    issues.append(
+        ArtifactQualityIssue(
+            artifact=artifact,
+            check="integration-test-plan-fault-and-gate-specificity",
+            passed=not missing_terms,
+            message="Integration test plan names fault paths and promotion gates."
+            if not missing_terms
+            else f"Missing integration test specificity terms: {', '.join(missing_terms)}",
+        )
+    )
+    return issues
 
 
 def evaluate_detailed_design_inputs(repo_dir: Path) -> list[ArtifactQualityIssue]:

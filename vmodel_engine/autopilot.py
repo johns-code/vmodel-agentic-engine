@@ -11,6 +11,7 @@ from pathlib import Path
 from vmodel_engine.delivery import _checkout_branch, _commit_all, _ensure_git_identity, _push, _write_product_ci
 from vmodel_engine.artifact_quality import (
     evaluate_detailed_design_inputs,
+    evaluate_detailed_test_design,
     evaluate_implementation_plan,
     evaluate_system_test_plan,
 )
@@ -305,6 +306,7 @@ def write_artifact_quality_gates(repo_dir: Path) -> list[str]:
     checks = [
         *evaluate_system_test_plan(repo_dir / "docs" / "vmodel" / "10-system-test-plan.md"),
         *evaluate_implementation_plan(repo_dir / "docs" / "planning" / "staged-development-test-plan.md"),
+        *evaluate_detailed_test_design(repo_dir),
         *evaluate_detailed_design_inputs(repo_dir),
     ]
     passed = all(check.passed for check in checks)
@@ -676,9 +678,23 @@ def _plantspeak_detailed_design() -> str:
 
 Project: PlantSpeak
 
+## Design Scope And Stage Boundary
+
+This detailed design covers the S0/S1 PC dev-mode contract and the detailed inputs that later S3-S6 target-board work must preserve. S0 proves inspectable command behavior, traceability, and deterministic canned evidence. S3-S6 must not change command names, response field names, requirement IDs, or evidence schemas without updating this document, the RTM, and the affected tests.
+
 ## ICD Capability Model
 
 `plantspeak.icd` maps each software requirement to one command, an implementation status, and a verification method. This prevents vague implementation claims: every ICD behavior has an inspectable status such as `modeled`, `canned-data`, `dev-board-led-substitute`, or `dev-board-unavailable`.
+
+## Component Contracts
+
+| Component | Public Entry Points | Inputs | Outputs | Invariants | Error Contract |
+| --- | --- | --- | --- | --- | --- |
+| `plantspeak.requirements` | `load_requirements`, `load_issue_links`, `requirement_ids` | packaged JSON resources | ordered requirement records and issue links | every record has `SW-###`, statement, priority, acceptance criteria | invalid/missing packaged data fails tests before release |
+| `plantspeak.icd` | `build_icd_capabilities`, `capability_summary` | requirement IDs, capability map | JSON-serializable command/status map | one capability record per software requirement | unknown requirement cannot silently disappear from summary |
+| `plantspeak.pins` | `pin_map` | none | signal-to-pin records with requirement IDs | target pin assignments are centralized | conflicting/duplicate signals fail unit tests |
+| `plantspeak.devices` | `default_dev_board_profile`, `build_capability_map`, `collect_dev_mode_snapshot` | board profile and dev-mode flag | capability statuses and sensor snapshot | unavailable target hardware is explicit, not reported as real success | unsupported hardware mode returns explicit unavailable/deferred status |
+| `plantspeak.cli` | `main` | command argv | stdout JSON/text and process status | commands are deterministic in dev mode | unsupported commands/modes fail closed with nonzero status |
 
 ## Hardware Abstraction
 
@@ -701,27 +717,40 @@ Dev mode returns a deterministic sensor snapshot for photodiode current, PPFD, l
 
 ## Error And Deferred Behavior
 
-| Condition | Dev-Mode Behavior | Target Stage |
-| --- | --- | --- |
-| External I2C unavailable | Return canned data and mark source `canned-dev-mode-data`. | S3/S6 |
-| User push button unavailable | Capability reports `dev-board-unavailable`. | S6 |
-| Hardware mode requested before adapter exists | CLI exits with explicit unsupported-mode message. | S3-S5 |
+| Condition | Detection Point | Dev-Mode Behavior | Target Stage | Required Test Design |
+| --- | --- | --- | --- | --- |
+| External I2C unavailable | `build_capability_map`, measurement provider | Return canned data and mark source `canned-dev-mode-data`. | S3/S6 | Unit test source metadata; integration test missing-device fault path. |
+| User push button unavailable | board profile | Capability reports `dev-board-unavailable`. | S6 | Unit test capability map; HIL test proves wake only on target hardware. |
+| Hardware mode requested before adapter exists | CLI/adapters | CLI exits with explicit unsupported-mode message. | S3-S5 | CLI negative test and stage gate before target claims. |
+| Malformed command/transport payload | future `ble_transport` and `icd_dispatch` | Local harness rejects unsupported command; target path returns protocol fault. | S4 | Transport test with malformed frame and no side effects. |
+| Device timeout or invalid data | future adapter HAL | Response contains explicit fault/status metadata and evidence record. | S3/S6 | Adapter test injects timeout/NACK/invalid data. |
 
 ## Command Surface
 
-| Command | Purpose |
-| --- | --- |
-| `list-requirements` | Show packaged software requirements. |
-| `trace` | Show requirement, issue, command, and verification mapping. |
-| `capabilities` | Emit ICD capability summary as JSON. |
-| `measure --dev-mode` | Emit canned sensor snapshot. |
-| `self-test --dev-mode` | Run deterministic dev-board checks. |
+| Command | Inputs | Output Contract | Requirement Coverage | Negative Behavior |
+| --- | --- | --- | --- | --- |
+| `list-requirements` | none | one line per packaged SW requirement | SW-001 through SW-014 trace support | missing packaged data fails tests |
+| `trace` | issue links and ICD map | requirement, issue, command, verification mapping | all SW requirements | missing issue link fails traceability gate |
+| `capabilities` | ICD catalog and capability map | JSON object keyed by requirement ID | SW-001, SW-007, SW-014 | missing/deferred capabilities remain visible with status |
+| `measure --dev-mode` | dev board profile | JSON snapshot with source metadata and fixed fields | SW-006, SW-008, SW-009, SW-010, SW-013 | non-dev hardware mode is unsupported until adapters exist |
+| `self-test --dev-mode` | dev board profile and ICD map | JSON booleans for external I2C, wake deferral, ICD presence | SW-001, SW-013, SW-014 | false checks block S2 promotion |
+
+## Detailed Design To Detailed Test Mapping
+
+| Design Decision | Unit Tests | Integration Tests | System / Acceptance Evidence |
+| --- | --- | --- | --- |
+| Requirement records are packaged and stable | `tests/test_requirements.py` validates IDs and acceptance criteria | `tests/test_cli.py` exercises list/trace loading | ST-002 trace evidence |
+| ICD capabilities never disappear | `tests/test_icd.py` validates all SW IDs and statuses | CLI capabilities JSON parsing | ST-003 capabilities artifact |
+| Dev-board unavailable hardware is explicit | `tests/test_devices.py` validates profile and capability statuses | self-test integrates profile and ICD map | ST-001 self-test artifact |
+| Measurement response shape is stable | `tests/test_devices.py` validates `SensorSnapshot.to_dict()` | CLI measure command emits full JSON | ST-004 measurement artifact |
+| Future adapters preserve contracts | S3 adapter contract tests with fault injection | S3/S4 integration tests for adapters and transport | ST-006 HIL evidence |
 
 ## Deferred Design Items
 
 - DA14531 firmware build, flash, and hardware execution flow.
 - BLE transport implementation between PC test harness and target firmware.
 - Wake-from-sleep behavior requiring the unavailable user push button or final target hardware.
+- Exact target-board timing, calibration, settling delay, and HIL fixture procedure remain open decisions and must be resolved before S3/S6 closure.
 """ + _remediation_closure()
 
 
@@ -883,15 +912,39 @@ Local test output is useful evidence, but GitHub Actions on the PR is the author
 
 
 def _plantspeak_unit_test_plan(rows: list[dict[str, str]]) -> str:
+    design = {
+        "SW-001": ("ICD catalog fixture with all requirement records", "assert capability summary contains every SW ID, command, status, and verification method", "remove one SW ID from fixture; test must fail coverage check", "S1"),
+        "SW-002": ("pin map fixture", "assert red and green LED signals resolve to P0_5/P0_11 and link SW-002", "duplicate or missing LED signal fails pin assignment test", "S1"),
+        "SW-003": ("dev-board profile fixture", "assert user push button maps to P0_10 and wake is unavailable/deferred", "target-only wake cannot report implemented in dev profile", "S1"),
+        "SW-004": ("dev-board profile fixture", "assert EN_Peripherals maps to P0_6 and unavailable state is explicit", "missing availability note fails capability map test", "S1"),
+        "SW-005": ("pin map fixture", "assert I2C SCL/SDA resolve to P0_8/P0_9", "swapped or missing I2C pins fail assignment test", "S1"),
+        "SW-006": ("dev-mode measurement fixture", "assert photodiode current, PPFD, units, and source metadata are present", "hardware-mode request before adapter returns unsupported/deferred", "S2"),
+        "SW-007": ("ICD command fixture", "assert drive-wavelength-leds capability exists with target-adapter status", "missing command blocks S3 adapter promotion", "S2"),
+        "SW-008": ("dev-mode measurement fixture", "assert leaf temperature field and source metadata are present", "missing sensor field fails snapshot contract", "S2"),
+        "SW-009": ("dev-mode measurement fixture", "assert ambient temperature and relative humidity fields are present", "invalid humidity range fails snapshot validation", "S2"),
+        "SW-010": ("dev-mode measurement fixture", "assert acceleration_g is a three-value vector", "wrong vector length fails snapshot validation", "S2"),
+        "SW-011": ("capability map fixture", "assert LED substitute behavior is marked dev-board substitute", "substitute cannot be reported as target hardware success", "S2"),
+        "SW-012": ("capability map fixture", "assert EN_Peripherals unavailable status is visible", "silent success for unavailable hardware fails test", "S2"),
+        "SW-013": ("measurement provider fixture", "assert canned-dev-mode-data source metadata is emitted", "missing source metadata blocks verification evidence", "S2"),
+        "SW-014": ("ICD and profile fixture", "assert wake behavior is deferred/unavailable in capability summary", "wake cannot be marked implemented without HIL evidence", "S2"),
+    }
     body = "\n".join(
-        f"| {row['unit']} | {row['requirement_id']} | {row['code']} | Implemented | `python -m pytest` |" for row in rows
+        (
+            f"| {row['unit']} | {row['requirement_id']} | {row['code']} | {design[row['requirement_id']][0]} | "
+            f"{design[row['requirement_id']][1]} | {design[row['requirement_id']][2]} | `python -m pytest`; named test module in RTM | {design[row['requirement_id']][3]} |"
+        )
+        for row in rows
     )
     return """# Unit Test Plan
 
 Project: PlantSpeak
 
-| Test ID | Requirement | Unit Under Test | Status | Evidence |
-| --- | --- | --- | --- | --- |
+## Unit Test Design Rule
+
+Every unit test must identify the fixture/input, concrete assertions, a negative, edge, or fault case, and the stage gate it supports. A row that only says `python -m pytest` is not detailed test design.
+
+| Test ID | Requirement | Unit Under Test | Fixture / Input | Assertions | Negative / Edge Case | Evidence | Stage |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 """ + body + "\n"
 
 
@@ -900,11 +953,19 @@ def _plantspeak_integration_test_plan() -> str:
 
 Project: PlantSpeak
 
-| Test ID | Requirements | Integration | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| IT-001 | SW-001, SW-013 | CLI loads requirements, ICD capabilities, issue links, and dev-board profile. | Implemented | `tests/test_cli.py` |
-| IT-002 | SW-006 through SW-010 | Dev-mode measurement integrates all canned sensor values in one snapshot. | Implemented | `tests/test_cli.py`, `tests/test_devices.py` |
-| IT-003 | SW-002 through SW-005, SW-011 through SW-014 | Capability map integrates pin constraints and unavailable hardware decisions. | Implemented | `tests/test_devices.py`, `tests/test_icd.py` |
+## Integration Test Design Rule
+
+Integration tests verify boundaries between components and stages. Each test names the setup, procedure, observable output, fault case, evidence artifact, and promotion gate.
+
+| Test ID | Requirements | Integration Boundary | Fixture / Setup | Procedure | Expected Observability | Negative / Fault Case | Evidence | Promotion Gate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| IT-001 | SW-001, SW-013 | requirements package -> ICD capability catalog -> CLI | fresh checkout with packaged `requirements.json` and `issue_links.json` | run `python -m plantspeak.cli capabilities` and parse JSON | all 14 SW IDs appear with command, status, and verification method | delete or alter one requirement link; traceability gate must fail | `tests/test_cli.py`, `tests/test_icd.py`, ST-003 JSON | S1 contracts complete |
+| IT-002 | SW-001, SW-002, SW-003, SW-004, SW-005, SW-011, SW-012, SW-014 | pin map -> dev-board profile -> capability map -> self-test | default dev-board profile fixture | run `python -m plantspeak.cli self-test --dev-mode` | JSON reports ICD present, external I2C canned, button wake deferred, unavailable hardware explicit | mark unavailable hardware as implemented; test must fail | `tests/test_devices.py`, `tests/test_icd.py`, ST-001 JSON | S2 dev-mode harness complete |
+| IT-003 | SW-006, SW-008, SW-009, SW-010, SW-013 | measurement provider -> SensorSnapshot -> CLI JSON | deterministic dev-mode provider | run `python -m plantspeak.cli measure --dev-mode` | JSON contains all sensor fields, units implied by names, and `source=canned-dev-mode-data` | remove source metadata or one field; schema/CLI test must fail | `tests/test_cli.py`, `tests/test_devices.py`, ST-004 JSON | S2 measurement evidence stable |
+| IT-004 | SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-013 | future HAL I2C -> mux/device adapters -> measurement service | mocked I2C bus with success, missing device, timeout, and invalid-data scripts | run `python -m pytest tests/test_adapters.py` after S3 implementation | adapters return typed values or explicit device faults without silent success | inject NACK, timeout, missing device, invalid data | `tests/test_adapters.py`, adapter fault logs | S3 hardware adapter layer complete |
+| IT-005 | SW-001, SW-007 | BLE/local transport -> ICD dispatch -> command response | mocked transport with valid, malformed, oversized, and timeout frames | run `python -m pytest tests/test_transport.py tests/test_security_transport.py` | valid command reaches dispatch; malformed payload returns protocol fault and no side effects | malformed frame, timeout, unsupported command | transport test report; security review update | S4 BLE ICD transport complete |
+| IT-006 | SW-001, SW-002, SW-003, SW-004, SW-005 | firmware command table -> pin config -> documented build path | DA14531 toolchain or manual evidence fixture | run documented firmware build or manual evidence checklist | firmware command table and pin config match S1 contracts | missing toolchain, bad pin mapping, stale command ID | `tests/test_firmware_contracts.py`, build/manual evidence log | S5 firmware build path complete |
+| IT-007 | SW-002, SW-003, SW-004, SW-005, SW-006, SW-007, SW-008, SW-009, SW-010, SW-014 | target board -> firmware -> BLE/PC harness -> HIL evidence | target board, flashed firmware, external peripherals, operator checklist | run `python -m pytest tests/hil --target-board` or manual HIL procedure | LEDs, EN_Peripherals, I2C reads, measurement sequence, and wake behavior produce requirement-linked evidence | disconnect device, press wake incorrectly, corrupt measurement path | `docs/test-evidence/ST-006-hil-report.md` | S6 HIL qualification complete |
 """
 
 
