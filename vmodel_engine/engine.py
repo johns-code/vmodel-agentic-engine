@@ -12,6 +12,7 @@ from vmodel_engine.agents import (
 )
 from vmodel_engine.artifacts import write_artifact_package
 from vmodel_engine.gates import run_python_project_gates
+from vmodel_engine.intake import read_requirements_input
 from vmodel_engine.models import ArtifactPackage, WorkflowRun, utc_now_iso
 from vmodel_engine.planning import create_implementation_tasks, create_traceability_matrix
 from vmodel_engine.project_templates import generate_python_cli_project
@@ -81,7 +82,7 @@ def build_project(
 
 
 def create_artifact_package(requirements_path: Path, project_name: str | None = None) -> ArtifactPackage:
-    brief = requirements_path.read_text(encoding="utf-8").strip()
+    brief = read_requirements_input(requirements_path).strip()
     needs, system_requirements, software_requirements = build_requirements(brief)
     tasks = create_implementation_tasks(software_requirements)
     traceability = create_traceability_matrix(software_requirements, system_requirements, tasks)

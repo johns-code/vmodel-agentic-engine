@@ -31,3 +31,16 @@ def test_build_project_runs_vertical_workflow(tmp_path: Path) -> None:
     assert workflow["project_type"] == "python-cli"
     assert workflow["tool_statuses"]
     assert workflow["artifact_reviews"]
+
+
+def test_build_project_accepts_requirements_directory(tmp_path: Path) -> None:
+    requirements_dir = tmp_path / "requirements"
+    requirements_dir.mkdir()
+    (requirements_dir / "User Requirements.txt").write_text("- Users must record observations.\n", encoding="utf-8")
+    (requirements_dir / "Toolchain.md").write_text("- The system should support dev-board testing.\n", encoding="utf-8")
+
+    run = build_project(requirements_dir, tmp_path / "run", "PlantSpeak")
+
+    assert run.status == "ready_for_human_acceptance"
+    package = (tmp_path / "run" / "artifacts" / "artifact-package.json").read_text(encoding="utf-8")
+    assert "Toolchain.md" in package

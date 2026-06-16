@@ -9,6 +9,7 @@ from pathlib import Path
 
 from vmodel_engine.engine import build_project
 from vmodel_engine.github import add_issue_to_project, create_issue, ensure_repo, load_github_project_config
+from vmodel_engine.intake import copy_source_requirements
 from vmodel_engine.models import DeliveryIssue, DeliveryPullRequest, DeliveryResult
 
 
@@ -28,6 +29,7 @@ def deliver_project(
 
     _copy_tree(output_dir / "artifacts", checkout_dir / "docs" / "vmodel")
     _copy_tree(output_dir / "agent-governance", checkout_dir / "docs" / "agent-governance")
+    copy_source_requirements(requirements_path, checkout_dir / "docs" / "source-requirements")
     _copy_file(output_dir / "workflow-run.json", checkout_dir / "docs" / "vmodel" / "workflow-run.json")
     _copy_file(output_dir / "gate-results.json", checkout_dir / "docs" / "vmodel" / "gate-results.json")
     _copy_tree(output_dir / "release-evidence", checkout_dir / "docs" / "release-evidence")
@@ -173,7 +175,8 @@ def _create_delivery_issues(repo: str, owner: str, project_number: int, output_d
             f"{item['description']}\n\n"
             "V-model artifacts are committed under `docs/vmodel/`."
         )
-        issue = create_issue(repo, item["title"], body)
+        title = _issue_title(item)
+        issue = create_issue(repo, title, body)
         add_issue_to_project(owner, project_number, issue["url"])
         issues.append(
             DeliveryIssue(
@@ -185,6 +188,16 @@ def _create_delivery_issues(repo: str, owner: str, project_number: int, output_d
             )
         )
     return issues
+
+
+def _issue_title(item: dict[str, object]) -> str:
+    requirement_id = str(item["requirement_ids"][0])
+    description = str(item["description"])
+    capability = description.split("The software shall implement:", 1)[-1].strip()
+    capability = capability.rstrip(".")
+    if len(capability) > 90:
+        capability = capability[:87].rstrip() + "..."
+    return f"{requirement_id}: {capability}"
 
 
 def _create_or_view_pr(repo: str, branch: str, project_name: str, issues: list[DeliveryIssue]) -> DeliveryPullRequest:

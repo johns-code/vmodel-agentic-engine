@@ -109,3 +109,15 @@ vmodel-engine deliver examples\plantspeak_requirements.txt --repo johns-code/pla
 ```
 
 See `docs/github-delivery.md`.
+
+## Dashboard
+
+Run a local dashboard for any workflow output directory:
+
+```powershell
+vmodel-engine dashboard runs\plantspeak-dashboard --port 8766
+```
+
+The dashboard shows V-model progress, artifacts, work items or GitHub issues, gates, agent reviews, arbitration records, and a clarification queue for the Software Lead Agent.
+
+See `docs/dashboard.md`.

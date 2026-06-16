@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from vmodel_engine.dashboard import serve_dashboard
 from vmodel_engine.delivery import deliver_project
 from vmodel_engine.engine import build_project
 from vmodel_engine.github import inspect_github_project, load_github_project_config, render_github_project_status
@@ -15,18 +16,18 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init = subparsers.add_parser("init", help="Generate initial V&V artifacts from a requirements brief.")
-    init.add_argument("requirements_file", type=Path, help="Path to a plain-text requirements brief.")
+    init.add_argument("requirements_file", type=Path, help="Path to a requirements file or directory.")
     init.add_argument("--output", "-o", type=Path, default=Path("runs/latest"), help="Output directory for artifacts.")
     init.add_argument("--project-name", help="Project name to use in generated artifacts.")
 
     build = subparsers.add_parser("build", help="Run the local end-to-end V-model workflow.")
-    build.add_argument("requirements_file", type=Path, help="Path to a plain-text requirements brief.")
+    build.add_argument("requirements_file", type=Path, help="Path to a requirements file or directory.")
     build.add_argument("--output", "-o", type=Path, default=Path("runs/build"), help="Output directory for the workflow run.")
     build.add_argument("--project-name", help="Project name to use in generated artifacts.")
     build.add_argument("--project-type", default="python-cli", help="Generated project type. Currently: python-cli.")
 
     deliver = subparsers.add_parser("deliver", help="Deliver a generated project to GitHub repo/issues/PR.")
-    deliver.add_argument("requirements_file", type=Path, help="Path to a plain-text requirements brief.")
+    deliver.add_argument("requirements_file", type=Path, help="Path to a requirements file or directory.")
     deliver.add_argument("--repo", required=True, help="Target product repository, for example johns-code/plantspeak.")
     deliver.add_argument("--output", "-o", type=Path, default=Path("runs/delivery"), help="Output directory for local delivery evidence.")
     deliver.add_argument("--project-name", required=True, help="Product project name.")
@@ -37,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
     github = subparsers.add_parser("github", help="Inspect configured GitHub integration.")
     github_subparsers = github.add_subparsers(dest="github_command", required=True)
     github_subparsers.add_parser("status", help="Check the configured GitHub Project.")
+
+    dashboard = subparsers.add_parser("dashboard", help="Serve a local V-model progress dashboard.")
+    dashboard.add_argument("run_dir", type=Path, help="Run directory to display.")
+    dashboard.add_argument("--host", default="127.0.0.1")
+    dashboard.add_argument("--port", type=int, default=8765)
     return parser
 
 
@@ -86,6 +92,9 @@ def main(argv: list[str] | None = None) -> int:
         status = inspect_github_project(load_github_project_config())
         print(render_github_project_status(status))
         return 0 if status.reachable else 1
+    if args.command == "dashboard":
+        serve_dashboard(args.run_dir, args.host, args.port)
+        return 0
     raise ValueError(f"unsupported command: {args.command}")
 
 
