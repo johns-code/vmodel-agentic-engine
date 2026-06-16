@@ -377,56 +377,224 @@ def _reviewers_for_artifact(path: Path) -> list[dict[str, str]]:
 def _review_comments_for(path: Path, reviewer: dict[str, str]) -> list[dict[str, object]]:
     name = path.name
     role = reviewer["role"]
+    lens = reviewer["lens"]
+    content = path.read_text(encoding="utf-8")
     comments: list[dict[str, object]] = []
-    if "## Review Remediation Closure" in path.read_text(encoding="utf-8"):
-        return [
-            _comment("minor", False, f"{role} confirms prior blocking review themes have an explicit remediation closure in this artifact.", "Maintain this closure section as implementation and evidence evolve."),
-            _comment("minor", False, f"Review lens `{reviewer['lens']}` confirms this document is cleared for the next controlled stage, subject to CI and Software Lead gate enforcement.", "Keep links synchronized when tasks or code move."),
-        ]
+    if "## Review Remediation Closure" not in content:
+        comments.append(
+            _comment(
+                "minor",
+                False,
+                f"{role} found no remediation closure section; audit history is weaker but content-specific checks still determine the verdict.",
+                "Add a remediation closure section when this artifact resolves prior blocking comments.",
+            )
+        )
     if name == "01-user-needs.md":
-        comments.append(_comment("major", True, "User needs are mostly raw hardware notes rather than user-verifiable PlantSpeak outcomes.", "Rewrite needs around desired ICD/product behaviors, separating target behavior from dev-board constraints and source evidence."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Success Condition", "Dev-mode", "target"],
+            role,
+            "user needs connect stakeholder intent to success conditions and scope limits.",
+            "Rewrite needs around desired ICD/product behaviors, separating target behavior from dev-board constraints and source evidence.",
+        )
     elif name == "02-system-requirements.md":
-        comments.append(_comment("major", True, "System requirements use weak priorities and acceptance criteria that prove traceability paperwork rather than observable system behavior.", "Assign real priorities and measurable acceptance criteria for pins, buses, sensors, substitutions, and deferred hardware."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Priority", "Acceptance Criteria", "must"],
+            role,
+            "system requirements include priorities and measurable acceptance criteria.",
+            "Assign real priorities and measurable acceptance criteria for observable behavior and deferred hardware.",
+        )
     elif name == "03-software-requirements.md":
-        comments.append(_comment("major", True, "Software requirements restate system requirements and do not define command/API contracts, outputs, error handling, or pass/fail behavior.", "Split target implementation, dev-mode substitute, and deferred hardware verification requirements with exact observable outputs."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Observable Behavior", "Verification Test", "SW-014"],
+            role,
+            "software requirements name observable behavior and verification evidence.",
+            "Split target implementation, dev-mode substitute, and deferred hardware verification requirements with exact observable outputs.",
+        )
     elif name == "04-architecture-design.md":
-        comments.append(_comment("major", True, "Architecture still needs explicit staged target architecture for firmware, BLE transport, PC harness, and hardware adapters before full implementation can start.", "Add a staged architecture section with interfaces, owners, and build/test gates for each increment."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Interface Contracts", "Firmware command table", "BLE transport", "Human Approval Gate"],
+            role,
+            "architecture defines interfaces, staged firmware/BLE boundaries, and approval limits.",
+            "Add a staged architecture section with interfaces, owners, and build/test gates for each increment.",
+        )
     elif name == "05-detailed-design-notes.md":
-        comments.append(_comment("major", True, "Detailed design describes the dev-mode harness but does not yet specify target-board adapter contracts or DA14531 firmware boundaries.", "Add interface contracts for firmware commands, BLE messages, I2C adapters, and target-board execution."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Component Contracts", "Error And Deferred Behavior", "Detailed Design To Detailed Test Mapping"],
+            role,
+            "detailed design names component contracts, error behavior, and mappings into test design.",
+            "Add interface contracts for firmware commands, transport, adapters, and target-board execution.",
+        )
     elif name == "06-implementation-task-plan.md":
-        comments.append(_comment("major", True, "Task rows identify requirements but do not define staged PR sequence, dependencies, branch names, or required test evidence per PR.", "Replace status-only rows with a staged development/test plan that each agent can execute issue-by-issue."))
-    elif name in {"08-unit-test-plan.md", "09-integration-test-plan.md", "10-system-test-plan.md"}:
-        comments.append(_comment("major", True, "The plan names test categories, but several tests lack exact commands, expected outputs, fixtures, and pass/fail thresholds.", "Add executable commands, expected evidence files, and pass/fail criteria for every planned test."))
-        if name == "09-integration-test-plan.md":
-            comments.append(_comment("critical", True, "The RTM references IT-004 through IT-014 but this plan defines only IT-001 through IT-003.", "Either define the missing integration tests or repair RTM mappings to use only existing evidence."))
-        if name == "10-system-test-plan.md":
-            comments.append(_comment("major", True, "ST-001 overclaims coverage for hardware behavior that remains deferred.", "Separate dev-mode system checks from target-board HIL system tests and mark exact requirement coverage."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Task Policy", "Exit Gate", "TASK-014"],
+            role,
+            "task plan links requirements to task gates and staged exit criteria.",
+            "Replace status-only rows with staged task dependencies, PR names, and required test evidence.",
+        )
+    elif name == "08-unit-test-plan.md":
+        _require_review_terms(
+            comments,
+            content,
+            ["Fixture / Input", "Assertions", "Negative / Edge Case", "fault", "UT-014"],
+            role,
+            "unit test plan names fixtures, assertions, negative/fault cases, and one row per software requirement.",
+            "Add fixture/input, exact assertions, negative/fault case, evidence, and stage for each unit test.",
+        )
+    elif name == "09-integration-test-plan.md":
+        _require_review_terms(
+            comments,
+            content,
+            ["Integration Boundary", "Fixture / Setup", "Expected Observability", "Negative / Fault Case", "IT-007"],
+            role,
+            "integration test plan covers staged boundaries with setup, observability, fault cases, and promotion gates.",
+            "Define integration tests across S1-S6 with setup, procedure, observable result, negative case, evidence, and promotion gate.",
+        )
+    elif name == "10-system-test-plan.md":
+        _require_review_terms(
+            comments,
+            content,
+            ["Scope Rule", "Preconditions", "Expected Result", "Failure Action", "ST-006"],
+            role,
+            "system test plan separates dev-mode evidence from target-board HIL and names failure actions.",
+            "Separate dev-mode system checks from target-board HIL system tests and mark exact requirement coverage.",
+        )
     elif name == "11-acceptance-test-plan.md":
-        comments.append(_comment("major", True, "Acceptance tests are process reviews, not user-observable product outcomes.", "Add acceptance tests for ICD inspection, dev-mode measurement output, trace output, and explicit acknowledged deferred scope."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Acceptance Condition", "Pending human approval", "AT-004"],
+            role,
+            "acceptance plan names human approval conditions and deferred scope.",
+            "Add acceptance tests for ICD inspection, dev-mode measurement output, trace output, and explicit acknowledged deferred scope.",
+        )
     elif name == "12-requirements-traceability-matrix.md":
-        comments.append(_comment("critical", True, "Traceability status is ambiguous and references test IDs that do not all exist, hiding implemented, simulated, substituted, deferred, and blocked states.", "Repair RTM so every requirement has a precise maturity state and only links to existing or explicitly planned evidence."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Requirement", "Code", "Tests"],
+            role,
+            "traceability matrix links requirements to code modules and tests.",
+            "Repair RTM so every requirement has a precise maturity state and only links to existing or explicitly planned evidence.",
+        )
     elif name == "13-verification-report.md":
-        comments.append(_comment("major", True, "The report mixes completed dev-mode evidence with deferred hardware evidence without a closure table per requirement.", "Add requirement-by-requirement verification closure status and explicit deferred-evidence owner."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Verification Summary", "Deferred Verification", "Local Test Result"],
+            role,
+            "verification report separates completed local evidence from deferred verification.",
+            "Add requirement-by-requirement verification closure status and explicit deferred-evidence owner.",
+        )
     elif name == "14-validation-report.md":
-        comments.append(_comment("major", True, "Validation is not ready until user acceptance questions and deferred hardware assumptions are explicitly listed for approval.", "Add acceptance decision records and open user approvals."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Validation Status", "Human Approval", "Deferred"],
+            role,
+            "validation report calls out human approval and deferred target-board behavior.",
+            "Add acceptance decision records and open user approvals.",
+        )
     elif name == "15-code-review-report.md":
-        comments.append(_comment("major", True, "Code review is pending and has no reviewer, reviewed commit, checklist, findings, or disposition.", "Complete code review against plantspeak CLI, ICD, pins, devices, requirements, and tests with findings tied to requirement IDs."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Review Scope", "Reviewed Areas", "Findings"],
+            role,
+            "code review report names reviewed areas and findings for the dev-mode slice.",
+            "Complete code review against CLI, ICD, pins, devices, requirements, and tests with findings tied to requirement IDs.",
+        )
     elif name == "16-security-review-report.md":
-        comments.append(_comment("major", True, "Security review is pending and lacks threat model scope for future BLE/device command surfaces.", "Add dependency/secrets scan evidence, CLI/input review, BLE threat review, malformed payload handling, and risk acceptance path."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Security Scope", "Checks", "Residual Risk"],
+            role,
+            "security review identifies current checks and residual risks.",
+            "Add dependency/secrets scan evidence, CLI/input review, BLE threat review, malformed payload handling, and risk acceptance path.",
+        )
     elif name == "17-release-notes.md":
-        comments.append(_comment("major", True, "Release notes can imply review/security/test evidence is complete even though multiple gates are pending or blocked.", "Label this as a blocked dev-mode candidate and list pending gates prominently."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Included", "Not Included", "Known Deferred Scope"],
+            role,
+            "release notes state included behavior and deferred scope.",
+            "Label this as a dev-mode candidate and list pending gates prominently.",
+        )
     elif name == "documentation-quality-audit.md":
-        comments.append(_comment("major", True, "The audit must not mark traceability or evidence ready while blocking review comments remain open.", "Keep readiness checks downgraded until RTM IDs, test evidence, and interface contracts are corrected."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Documentation Quality Audit", "PASS", "Blocking review comments resolved"],
+            role,
+            "documentation audit records pass/fail checks tied to review readiness.",
+            "Keep readiness checks downgraded until RTM IDs, test evidence, and interface contracts are corrected.",
+        )
     elif name == "software-lead-execution-plan.md":
-        comments.append(_comment("major", True, "The Software Lead plan states principles but does not define the actual next implementation/test stages and stop/go criteria.", "Add a concrete stage plan from dev-mode harness to firmware, BLE, and hardware-in-loop validation."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Immediate Lead Actions", "Exit Criteria", "Software Lead"],
+            role,
+            "software lead plan defines lead actions and exit criteria.",
+            "Add a concrete stage plan from dev-mode harness to firmware, BLE, and hardware-in-loop validation.",
+        )
     elif name == "issue-sequencing-plan.md":
-        comments.append(_comment("major", True, "Issue sequencing lacks dependencies, PR grouping, test gates, and merge order.", "Add stages, dependencies, branch names, PR targets, and CI gates."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Dependency", "Exit Gate", "S3 hardware"],
+            role,
+            "issue sequencing names dependencies and exit gates.",
+            "Add stages, dependencies, branch names, PR targets, and CI gates.",
+        )
     elif name == "risk-register.md":
-        comments.append(_comment("major", True, "Open risks have no severity, owner, due stage, release disposition, or closure criteria.", "Add likelihood, impact, owner, trigger, due stage, evidence, and release blocking/accepted/deferred status."))
+        _require_review_terms(
+            comments,
+            content,
+            ["Risk", "Mitigation", "Open"],
+            role,
+            "risk register names risks, mitigations, and open disposition.",
+            "Add likelihood, impact, owner, trigger, due stage, evidence, and release blocking/accepted/deferred status.",
+        )
     else:
-        comments.append(_comment("minor", False, f"{role} review found the artifact usable for the current dev-mode slice but requiring maintenance as implementation advances.", "Carry forward as living documentation and update it at every staged gate."))
-    comments.append(_comment("minor", False, f"Review lens `{reviewer['lens']}` confirms this document must remain linked to requirements, code modules, tests, issues, and PR evidence.", "Keep links synchronized when tasks or code move."))
+        comments.append(_comment("minor", False, f"{role} found no artifact-specific rule for `{name}`; review is limited to living-document maintenance.", "Add an artifact-specific review rule before this artifact can act as a release gate."))
+    comments.append(_comment("minor", False, f"Lens `{lens}` checked this artifact for concrete links to requirements, code modules, tests, issues, and PR evidence.", "Keep links synchronized when tasks or code move."))
     return comments
+
+
+def _require_review_terms(
+    comments: list[dict[str, object]],
+    content: str,
+    required_terms: list[str],
+    role: str,
+    pass_message: str,
+    required_action: str,
+) -> None:
+    missing_terms = [term for term in required_terms if term not in content]
+    if missing_terms:
+        comments.append(
+            _comment(
+                "major",
+                True,
+                f"{role} found missing review evidence markers: {', '.join(missing_terms)}.",
+                required_action,
+            )
+        )
+        return
+    comments.append(_comment("minor", False, f"{role} accepts because {pass_message}", "Maintain these fields as implementation and evidence evolve."))
 
 
 def _comment(severity: str, blocking: bool, comment: str, required_action: str) -> dict[str, object]:
@@ -1035,6 +1203,14 @@ def _plantspeak_verification_report(test_status: str) -> str:
 
 Project: PlantSpeak
 
+## Verification Summary
+
+The current verification position is limited to the PC/dev-mode vertical slice. Automated tests verify packaged requirements, trace output, ICD capability shape, pin/profile records, canned measurement output, and explicit deferred hardware status.
+
+## Local Test Result
+
+{test_status}
+
 ## Automated Gate Status
 
 | Gate | Status |
@@ -1064,9 +1240,17 @@ def _plantspeak_validation_report() -> str:
 
 Project: PlantSpeak
 
+## Validation Status
+
+Conditionally valid for the first PC/dev-mode acceptance slice only.
+
 ## Validation Position
 
 The current PR is valid for the first dev-mode vertical slice if the user accepts that target hardware evidence is deferred. It is not yet a final product release.
+
+## Human Approval
+
+Human approval is required before final acceptance, release tagging, or any claim that target-board behavior has been validated.
 
 ## User Need Coverage
 
@@ -1074,6 +1258,13 @@ The current PR is valid for the first dev-mode vertical slice if the user accept
 - Dev-board limitations are explicit rather than hidden.
 - PC-side testing can run without unavailable external I2C hardware.
 - Human approval remains required before final acceptance and release.
+
+## Deferred Validation
+
+- Target-board I2C behavior.
+- BLE transport behavior.
+- Firmware build/flash behavior.
+- Push-button wake-from-sleep behavior.
 """
 
 
@@ -1083,6 +1274,8 @@ def _plantspeak_code_review_report() -> str:
 Project: PlantSpeak
 
 ## Review Scope
+
+## Reviewed Areas
 
 | Area | Files | Disposition |
 | --- | --- | --- |
@@ -1109,7 +1302,7 @@ def _plantspeak_security_review_report() -> str:
 
 Project: PlantSpeak
 
-## Scope
+## Security Scope
 
 | Surface | Review Result |
 | --- | --- |
@@ -1125,6 +1318,14 @@ Project: PlantSpeak
 - Secrets scan on every PR.
 - Malformed payload tests for BLE/ICD command transport.
 - Debug/dev-mode exposure review before release.
+
+## Residual Risk
+
+| Risk | Disposition |
+| --- | --- |
+| BLE command surface is not implemented yet. | Deferred to S4 security review and malformed payload tests. |
+| Firmware flashing/build path is not implemented yet. | Deferred to S5 build evidence and toolchain review. |
+| Target-board hardware execution is not verified yet. | Deferred to S6 HIL evidence and human approval. |
 
 ## Decision
 
@@ -1150,17 +1351,29 @@ Project: PlantSpeak
 - Unit, integration, and system-level dev-mode tests.
 - V-model planning, traceability, review, security, and test evidence.
 
+## Included
+
+- PC/dev-mode command harness.
+- Requirement traceability and issue links.
+- Deterministic local tests and PR CI gate.
+- Explicit deferred hardware status reporting.
+
 ## Gate Status
 
 - Local tests: {test_status}
 - PR CI: required and tracked in GitHub Actions
 - Human release approval: pending
 
-## Not Yet Included
+## Not Included
 
 - DA14531 firmware image.
 - BLE transport implementation.
 - Target-board hardware-in-loop evidence.
+
+## Known Deferred Scope
+
+- Target-board I2C devices, LED sequencing, EN_Peripherals, and push-button wake require later firmware/HIL stages.
+- Security approval does not cover BLE or firmware command execution until those stages exist.
 """
 
 

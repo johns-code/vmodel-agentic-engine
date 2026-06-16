@@ -6,6 +6,8 @@ import json
 import subprocess
 
 from vmodel_engine.autopilot import (
+    _plantspeak_integration_test_plan,
+    _plantspeak_unit_test_plan,
     write_artifact_quality_gates,
     write_artifact_review_cycle,
     write_plantspeak_documentation,
@@ -105,6 +107,45 @@ def test_write_artifact_review_cycle_requires_three_reviews_per_doc(tmp_path: Pa
     assert summary["review_count"] == 9
     assert summary["reviews_per_artifact"] == 3
     assert summary["implementation_readiness"] == "blocked_pending_review_actions"
+
+
+def test_artifact_review_cycle_uses_content_specific_evidence(tmp_path: Path) -> None:
+    vmodel_dir = tmp_path / "docs" / "vmodel"
+    vmodel_dir.mkdir(parents=True)
+    rows = [
+        {"unit": f"UT-{index:03d}", "requirement_id": f"SW-{index:03d}", "code": "plantspeak/devices.py"}
+        for index in range(1, 15)
+    ]
+    (vmodel_dir / "08-unit-test-plan.md").write_text(_plantspeak_unit_test_plan(rows), encoding="utf-8")
+    (vmodel_dir / "09-integration-test-plan.md").write_text(_plantspeak_integration_test_plan(), encoding="utf-8")
+    (vmodel_dir / "10-system-test-plan.md").write_text(
+        """# System Test Plan
+
+## Scope Rule
+
+Dev-mode and target-board HIL evidence are separated.
+
+| ID | Test | Preconditions | Command / Procedure | Expected Result | Evidence Artifact | Requirements | Limits | Failure Action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ST-006 | HIL qualification | Target board available. | Run HIL. | Requirement-linked evidence. | docs/test-evidence/ST-006-hil-report.md | SW-001 | Deferred until target hardware exists. | Create or update issue. |
+
+## Review Remediation Closure
+""",
+        encoding="utf-8",
+    )
+
+    write_artifact_review_cycle(tmp_path)
+    summary = json.loads((tmp_path / "docs" / "reviews" / "artifact-review-cycle.json").read_text(encoding="utf-8"))
+    comments = "\n".join(
+        comment["comment"]
+        for review in summary["reviews"]
+        for comment in review["comments"]
+    )
+
+    assert "confirms prior blocking review themes" not in comments
+    assert "unit test plan names fixtures, assertions, negative/fault cases" in comments
+    assert "integration test plan covers staged boundaries" in comments
+    assert summary["implementation_readiness"] == "ready_for_staged_implementation"
 
 
 def test_write_artifact_quality_gates_reports_system_test_plan_status(tmp_path: Path) -> None:
