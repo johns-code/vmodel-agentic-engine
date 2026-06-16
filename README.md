@@ -121,3 +121,14 @@ vmodel-engine dashboard runs\plantspeak-dashboard --port 8766
 The dashboard shows V-model progress, artifacts, work items or GitHub issues, gates, agent reviews, arbitration records, and a clarification queue for the Software Lead Agent.
 
 See `docs/dashboard.md`.
+
+## Clarification Gates
+
+Before delivery, the Software Lead Agent can generate required questions:
+
+```powershell
+vmodel-engine clarify "C:\Users\johns\Plantspeak\Requirements" --output runs\plantspeak-clarify
+vmodel-engine dashboard runs\plantspeak-clarify --port 8766
+```
+
+Delivery blocks until required questions are answered, unless `--allow-pending-clarifications` is explicitly used.

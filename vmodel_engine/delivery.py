@@ -7,6 +7,7 @@ import stat
 import subprocess
 from pathlib import Path
 
+from vmodel_engine.clarifications import ensure_clarifications_answered
 from vmodel_engine.engine import build_project
 from vmodel_engine.github import add_issue_to_project, create_issue, ensure_repo, load_github_project_config
 from vmodel_engine.intake import copy_source_requirements
@@ -19,7 +20,17 @@ def deliver_project(
     repo: str,
     project_name: str,
     project_type: str = "python-cli",
+    require_clarifications: bool = True,
 ) -> DeliveryResult:
+    if require_clarifications:
+        pending = ensure_clarifications_answered(requirements_path, output_dir)
+        if pending:
+            questions = "\n".join(f"- {item.id}: {item.question}" for item in pending)
+            raise RuntimeError(
+                "delivery blocked pending required Software Lead clarifications:\n"
+                f"{questions}\n"
+                "Answer them in the dashboard or with the question-answer command, then rerun delivery."
+            )
     run = build_project(requirements_path, output_dir, project_name, project_type)
     config = load_github_project_config()
     repo_url = ensure_repo(repo, f"{project_name} generated and governed by vmodel-agentic-engine", public=True)

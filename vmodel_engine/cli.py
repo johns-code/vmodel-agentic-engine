@@ -3,11 +3,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from vmodel_engine.clarifications import generate_lead_clarifications
 from vmodel_engine.dashboard import serve_dashboard
 from vmodel_engine.delivery import deliver_project
 from vmodel_engine.engine import build_project
 from vmodel_engine.github import inspect_github_project, load_github_project_config, render_github_project_status
 from vmodel_engine.pipeline import generate_initial_artifacts
+from vmodel_engine.questions import answer_question, load_questions, pending_required_questions
 from vmodel_engine.tooling import inspect_tools, render_tool_statuses
 
 
@@ -32,6 +34,20 @@ def build_parser() -> argparse.ArgumentParser:
     deliver.add_argument("--output", "-o", type=Path, default=Path("runs/delivery"), help="Output directory for local delivery evidence.")
     deliver.add_argument("--project-name", required=True, help="Product project name.")
     deliver.add_argument("--project-type", default="python-cli", help="Generated project type. Currently: python-cli.")
+    deliver.add_argument("--allow-pending-clarifications", action="store_true", help="Proceed even when required lead questions are unanswered.")
+
+    clarify = subparsers.add_parser("clarify", help="Generate Software Lead clarification questions.")
+    clarify.add_argument("requirements_file", type=Path, help="Path to a requirements file or directory.")
+    clarify.add_argument("--output", "-o", type=Path, default=Path("runs/clarify"), help="Run directory for question state.")
+
+    questions = subparsers.add_parser("questions", help="Inspect or answer orchestrator questions.")
+    question_subparsers = questions.add_subparsers(dest="questions_command", required=True)
+    question_list = question_subparsers.add_parser("list", help="List questions for a run.")
+    question_list.add_argument("run_dir", type=Path)
+    question_answer = question_subparsers.add_parser("answer", help="Answer a question for a run.")
+    question_answer.add_argument("run_dir", type=Path)
+    question_answer.add_argument("question_id")
+    question_answer.add_argument("answer")
 
     subparsers.add_parser("ready", help="Print supported project intake capabilities.")
     subparsers.add_parser("doctor", help="Inspect available open-source developer tools.")
@@ -71,7 +87,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Arbitrations: {len(run.arbitration_records)}")
         return 0 if run.status == "ready_for_human_acceptance" else 1
     if args.command == "deliver":
-        result = deliver_project(args.requirements_file, args.output, args.repo, args.project_name, args.project_type)
+        result = deliver_project(
+            args.requirements_file,
+            args.output,
+            args.repo,
+            args.project_name,
+            args.project_type,
+            require_clarifications=not args.allow_pending_clarifications,
+        )
         print(f"Delivery status: {result.workflow_status}")
         print(f"Repository: {result.repository_url}")
         print(f"Project: {result.project_url}")
@@ -79,6 +102,25 @@ def main(argv: list[str] | None = None) -> int:
         if result.pull_request:
             print(f"Pull request: {result.pull_request.url}")
         return 0 if result.workflow_status == "ready_for_human_acceptance" else 1
+    if args.command == "clarify":
+        generated = generate_lead_clarifications(args.requirements_file, args.output)
+        pending = pending_required_questions(args.output)
+        print(f"Generated/loaded {len(generated)} Software Lead questions in {args.output}")
+        print(f"Pending required questions: {len(pending)}")
+        for item in pending:
+            print(f"{item.id}: {item.question}")
+        return 0 if not pending else 2
+    if args.command == "questions" and args.questions_command == "list":
+        for item in load_questions(args.run_dir):
+            marker = "required" if item.required else "optional"
+            print(f"{item.id} [{item.status}, {marker}, {item.phase}, {item.topic}] {item.question}")
+            if item.answer:
+                print(f"  answer: {item.answer}")
+        return 0
+    if args.command == "questions" and args.questions_command == "answer":
+        item = answer_question(args.run_dir, args.question_id, args.answer)
+        print(f"Answered {item.id}")
+        return 0
     if args.command == "ready":
         print("Ready to accept the first project.")
         print("Supported project types: python-cli")

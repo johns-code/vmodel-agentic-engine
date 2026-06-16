@@ -18,3 +18,4 @@ def test_dashboard_state_includes_vmodel_and_questions(tmp_path: Path) -> None:
     assert state["workflow"]["status"] == "ready_for_human_acceptance"
     assert len(state["vmodel"]) >= 10
     assert state["questions"][0]["status"] == "answered"
+    assert state["questions"][0]["required"] is True

@@ -15,6 +15,9 @@ class ClarificationQuestion:
     asked_by: str
     status: str
     created_at: str
+    required: bool = True
+    phase: str = "preflight"
+    topic: str = "general"
     answered_at: str | None = None
     answer: str | None = None
 
@@ -31,8 +34,19 @@ def load_questions(run_dir: Path) -> list[ClarificationQuestion]:
     return [ClarificationQuestion(**item) for item in data]
 
 
-def create_question(run_dir: Path, question: str, context: str = "", asked_by: str = "software_lead") -> ClarificationQuestion:
+def create_question(
+    run_dir: Path,
+    question: str,
+    context: str = "",
+    asked_by: str = "software_lead",
+    required: bool = True,
+    phase: str = "preflight",
+    topic: str = "general",
+) -> ClarificationQuestion:
     questions = load_questions(run_dir)
+    for item in questions:
+        if item.question == question and item.phase == phase:
+            return item
     next_id = f"Q-{len(questions) + 1:003d}"
     item = ClarificationQuestion(
         id=next_id,
@@ -41,6 +55,9 @@ def create_question(run_dir: Path, question: str, context: str = "", asked_by: s
         asked_by=asked_by,
         status="pending",
         created_at=utc_now_iso(),
+        required=required,
+        phase=phase,
+        topic=topic,
     )
     _write_questions(run_dir, [*questions, item])
     return item
@@ -59,6 +76,9 @@ def answer_question(run_dir: Path, question_id: str, answer: str) -> Clarificati
                 asked_by=item.asked_by,
                 status="answered",
                 created_at=item.created_at,
+                required=item.required,
+                phase=item.phase,
+                topic=item.topic,
                 answered_at=utc_now_iso(),
                 answer=answer,
             )
@@ -69,6 +89,10 @@ def answer_question(run_dir: Path, question_id: str, answer: str) -> Clarificati
         raise KeyError(question_id)
     _write_questions(run_dir, updated)
     return answered
+
+
+def pending_required_questions(run_dir: Path) -> list[ClarificationQuestion]:
+    return [item for item in load_questions(run_dir) if item.required and item.status != "answered"]
 
 
 def _write_questions(run_dir: Path, questions: list[ClarificationQuestion]) -> None:

@@ -82,6 +82,9 @@ def serve_dashboard(run_dir: Path, host: str = "127.0.0.1", port: int = 8765) ->
                     str(payload.get("question", "")).strip(),
                     str(payload.get("context", "")).strip(),
                     str(payload.get("asked_by", "software_lead")).strip() or "software_lead",
+                    bool(payload.get("required", True)),
+                    str(payload.get("phase", "preflight")).strip() or "preflight",
+                    str(payload.get("topic", "general")).strip() or "general",
                 )
                 self._send_json(asdict(item), status=HTTPStatus.CREATED)
                 return
